@@ -29,3 +29,7 @@ springdoc:
   api-docs:
     path: /v3/api-docs
   show-actuator: false
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration: 3600000

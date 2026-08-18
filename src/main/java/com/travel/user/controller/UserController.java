@@ -1,6 +1,8 @@
 package com.travel.user.controller;
 
 import com.travel.global.response.ApiResponse;
+import com.travel.user.dto.UserLoginRequest;
+import com.travel.user.dto.UserLoginResponse;
 import com.travel.user.dto.UserResponse;
 import com.travel.user.dto.UserSignUpRequest;
 import com.travel.user.service.UserService;
@@ -36,6 +38,15 @@ public class UserController {
         return ApiResponse.success(
                 "회원가입이 완료되었습니다.",
                 response
+        );
+    }
+    @PostMapping("/login")
+    public ApiResponse<UserLoginResponse> login(
+            @Valid @RequestBody UserLoginRequest request
+    ) {
+        return ApiResponse.success(
+                "로그인에 성공했습니다.",
+                userService.login(request)
         );
     }
 }

@@ -60,7 +60,13 @@ public enum ErrorCode {
     EXTERNAL_API_ERROR(
             HttpStatus.BAD_GATEWAY,
             "외부 API 호출 중 오류가 발생했습니다."
+    ),
+
+    INVALID_LOGIN(
+            HttpStatus.UNAUTHORIZED,
+            "이메일 또는 비밀번호가 올바르지 않습니다."
     );
+
 
     private final HttpStatus status;
     private final String message;
