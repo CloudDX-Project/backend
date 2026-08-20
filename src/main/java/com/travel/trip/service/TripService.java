@@ -40,6 +40,8 @@ public class TripService {
                 .endDate(request.endDate())
                 .peopleCount(request.peopleCount())
                 .budget(request.budget())
+                .mealBudgetPerPersonPerDay(request.mealBudgetPerPersonPerDay())
+                .transportType(request.transportType())
                 .build();
 
         Trip savedTrip = tripRepository.save(trip);

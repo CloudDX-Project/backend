@@ -39,7 +39,15 @@ public class Trip {
     @Column(nullable = false)
     private int peopleCount;
 
+    @Column(nullable = false)
     private Long budget;
+
+    @Column(nullable = false)
+    private Long mealBudgetPerPersonPerDay;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private TransportType transportType;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
@@ -55,7 +63,9 @@ public class Trip {
             LocalDate startDate,
             LocalDate endDate,
             int peopleCount,
-            Long budget
+            Long budget,
+            Long mealBudgetPerPersonPerDay,
+            TransportType transportType
     ) {
         this.user = user;
         this.departure = departure;
@@ -64,6 +74,8 @@ public class Trip {
         this.endDate = endDate;
         this.peopleCount = peopleCount;
         this.budget = budget;
+        this.mealBudgetPerPersonPerDay = mealBudgetPerPersonPerDay;
+        this.transportType = transportType;
     }
 
     @PrePersist

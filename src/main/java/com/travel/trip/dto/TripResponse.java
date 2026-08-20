@@ -1,5 +1,6 @@
 package com.travel.trip.dto;
 
+import com.travel.trip.entity.TransportType;
 import com.travel.trip.entity.Trip;
 
 import java.time.LocalDate;
@@ -11,7 +12,9 @@ public record TripResponse(
         LocalDate startDate,
         LocalDate endDate,
         int peopleCount,
-        Long budget
+        Long budget,
+        Long mealBudgetPerPersonPerDay,
+        TransportType transportType
 ) {
 
     public static TripResponse from(Trip trip) {
@@ -22,7 +25,9 @@ public record TripResponse(
                 trip.getStartDate(),
                 trip.getEndDate(),
                 trip.getPeopleCount(),
-                trip.getBudget()
+                trip.getBudget(),
+                trip.getMealBudgetPerPersonPerDay(),
+                trip.getTransportType()
         );
     }
 }
