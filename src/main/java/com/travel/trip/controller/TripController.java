@@ -1,8 +1,10 @@
 package com.travel.trip.controller;
 
 import com.travel.global.response.ApiResponse;
+import com.travel.trip.dto.TripCostResponse;
 import com.travel.trip.dto.TripCreateRequest;
 import com.travel.trip.dto.TripResponse;
+import com.travel.trip.service.TripCostService;
 import com.travel.trip.service.TripService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +19,7 @@ import java.util.List;
 public class TripController {
 
     private final TripService tripService;
+    private final TripCostService tripCostService;
 
     @PostMapping
     public ApiResponse<TripResponse> createTrip(
@@ -51,6 +54,17 @@ public class TripController {
 
         return ApiResponse.success(
                 tripService.getMyTrips(userId)
+        );
+    }
+    @GetMapping("/{tripId}/cost")
+    public ApiResponse<TripCostResponse> getTripCost(
+            Authentication authentication,
+            @PathVariable Long tripId
+    ) {
+        Long userId = (Long) authentication.getPrincipal();
+
+        return ApiResponse.success(
+                tripCostService.getTripCost(userId, tripId)
         );
     }
 }
