@@ -9,6 +9,8 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Getter
@@ -49,6 +51,15 @@ public class Trip {
     @Column(nullable = false, length = 30)
     private TransportType transportType;
 
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+            name = "trip_preferences",
+            joinColumns = @JoinColumn(name = "trip_id")
+    )
+    @Enumerated(EnumType.STRING)
+    @Column(name = "preference", nullable = false, length = 30)
+    private Set<TripPreference> preferences = new HashSet<>();
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -65,7 +76,8 @@ public class Trip {
             int peopleCount,
             Long budget,
             Long mealBudgetPerPersonPerDay,
-            TransportType transportType
+            TransportType transportType,
+            Set<TripPreference> preferences
     ) {
         this.user = user;
         this.departure = departure;
@@ -76,6 +88,7 @@ public class Trip {
         this.budget = budget;
         this.mealBudgetPerPersonPerDay = mealBudgetPerPersonPerDay;
         this.transportType = transportType;
+        this.preferences = new HashSet<>(preferences);
     }
 
     @PrePersist

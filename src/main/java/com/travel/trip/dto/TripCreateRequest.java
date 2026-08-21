@@ -1,9 +1,12 @@
 package com.travel.trip.dto;
 
 import com.travel.trip.entity.TransportType;
+import com.travel.trip.entity.TripPreference;
 import jakarta.validation.constraints.*;
 
 import java.time.LocalDate;
+import java.util.Set;
+
 
 public record TripCreateRequest(
 
@@ -33,7 +36,10 @@ public record TripCreateRequest(
         Long mealBudgetPerPersonPerDay,
 
         @NotNull(message = "교통수단은 필수입니다.")
-        TransportType transportType
+        TransportType transportType,
+
+        @NotEmpty(message = "여행 선호도는 1개 이상 선택해야 합니다.")
+        Set<TripPreference> preferences
 
 ) {
 }
