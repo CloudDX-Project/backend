@@ -65,6 +65,10 @@ public enum ErrorCode {
     INVALID_LOGIN(
             HttpStatus.UNAUTHORIZED,
             "이메일 또는 비밀번호가 올바르지 않습니다."
+    ),
+    INVALID_TRIP_PERIOD(
+            HttpStatus.BAD_REQUEST,
+            "종료일은 출발일보다 빠를 수 없습니다."
 
     );
 

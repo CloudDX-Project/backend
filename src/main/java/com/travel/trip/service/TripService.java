@@ -22,11 +22,18 @@ public class TripService {
     private final TripRepository tripRepository;
     private final UserRepository userRepository;
 
+    private void validateTripPeriod(TripCreateRequest request) {
+        if (request.endDate().isBefore(request.startDate())) {
+            throw new BusinessException(ErrorCode.INVALID_TRIP_PERIOD);
+        }
+    }
+
     @Transactional
     public TripResponse createTrip(
             Long userId,
             TripCreateRequest request
     ) {
+        validateTripPeriod(request);
         User user = userRepository.findById(userId)
                 .orElseThrow(() ->
                         new BusinessException(ErrorCode.USER_NOT_FOUND)

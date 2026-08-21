@@ -1,10 +1,7 @@
 package com.travel.trip.dto;
 
 import com.travel.trip.entity.TransportType;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.*;
 
 import java.time.LocalDate;
 
@@ -17,9 +14,11 @@ public record TripCreateRequest(
         String destination,
 
         @NotNull(message = "출발일은 필수입니다.")
+        @FutureOrPresent(message = "출발일은 오늘 이후여야 합니다.")
         LocalDate startDate,
 
         @NotNull(message = "종료일은 필수입니다.")
+        @FutureOrPresent(message = "종료일은 오늘 이후여야 합니다.")
         LocalDate endDate,
 
         @Min(value = 1, message = "인원수는 1명 이상이어야 합니다.")
