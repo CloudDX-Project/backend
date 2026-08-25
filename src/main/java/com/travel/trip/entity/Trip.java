@@ -9,7 +9,9 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Entity
@@ -48,8 +50,8 @@ public class Trip {
     private Long mealBudgetPerPersonPerDay;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
-    private TransportType transportType;
+    @Column(nullable = false, length = 20)
+    private TripPace pace;
 
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(
@@ -59,6 +61,14 @@ public class Trip {
     @Enumerated(EnumType.STRING)
     @Column(name = "preference", nullable = false, length = 30)
     private Set<TripPreference> preferences = new HashSet<>();
+
+    @OneToMany(
+            mappedBy = "trip",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true
+    )
+    @OrderBy("dayNumber ASC")
+    private List<TripDay> tripDays = new ArrayList<>();
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
@@ -76,7 +86,7 @@ public class Trip {
             int peopleCount,
             Long budget,
             Long mealBudgetPerPersonPerDay,
-            TransportType transportType,
+            TripPace pace,
             Set<TripPreference> preferences
     ) {
         this.user = user;
@@ -87,8 +97,12 @@ public class Trip {
         this.peopleCount = peopleCount;
         this.budget = budget;
         this.mealBudgetPerPersonPerDay = mealBudgetPerPersonPerDay;
-        this.transportType = transportType;
+        this.pace = pace;
         this.preferences = new HashSet<>(preferences);
+    }
+
+    public void addTripDay(TripDay tripDay) {
+        this.tripDays.add(tripDay);
     }
 
     @PrePersist

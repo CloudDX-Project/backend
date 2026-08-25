@@ -1,6 +1,6 @@
 package com.travel.trip.dto;
 
-import com.travel.trip.entity.TransportType;
+import com.travel.trip.entity.TripPace;
 import com.travel.trip.entity.TripPreference;
 import jakarta.validation.constraints.*;
 
@@ -35,8 +35,8 @@ public record TripCreateRequest(
         @PositiveOrZero(message = "1인당 하루 식비는 0원 이상이어야 합니다.")
         Long mealBudgetPerPersonPerDay,
 
-        @NotNull(message = "교통수단은 필수입니다.")
-        TransportType transportType,
+        @NotNull(message = "여행 속도는 필수입니다.")
+        TripPace pace,
 
         @NotEmpty(message = "여행 선호도는 1개 이상 선택해야 합니다.")
         Set<TripPreference> preferences

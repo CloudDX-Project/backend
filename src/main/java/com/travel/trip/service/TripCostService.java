@@ -3,7 +3,9 @@ package com.travel.trip.service;
 import com.travel.global.exception.BusinessException;
 import com.travel.global.exception.ErrorCode;
 import com.travel.trip.dto.TripCostResponse;
+import com.travel.trip.entity.TransportSegment;
 import com.travel.trip.entity.Trip;
+import com.travel.trip.repository.TransportSegmentRepository;
 import com.travel.trip.repository.TripRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,23 +20,55 @@ public class TripCostService {
 
     private final TripRepository tripRepository;
 
-    public TripCostResponse getTripCost(Long userId, Long tripId) {
-        Trip trip = tripRepository.findByIdAndUserId(tripId, userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.TRIP_NOT_FOUND));
+    private final TransportSegmentRepository
+            transportSegmentRepository;
 
-        long mealCost = calculateMealCost(trip);
+    public TripCostResponse getTripCost(
+            Long userId,
+            Long tripId
+    ) {
 
-        // 외부 API 연동 전 단계이므로 아직 계산하지 않는 비용은 0원으로 둔다.
-        long transportCost = 0L;
+        Trip trip =
+                tripRepository
+                        .findByIdAndUserId(
+                                tripId,
+                                userId
+                        )
+                        .orElseThrow(() ->
+                                new BusinessException(
+                                        ErrorCode.TRIP_NOT_FOUND
+                                )
+                        );
+
+        long tripDays =
+                calculateTripDays(trip);
+
+        long mealCost =
+                calculateMealCost(
+                        trip,
+                        tripDays
+                );
+
+        long transportCost =
+                calculateTransportCost(
+                        tripId
+                );
+
+        // 관광지 연동 전
         long activityCost = 0L;
+
+        // 숙박 연동 전
         long accommodationCost = 0L;
 
-        long totalCost = mealCost
-                + transportCost
-                + activityCost
-                + accommodationCost;
+        long totalCost =
+                mealCost
+                        + transportCost
+                        + activityCost
+                        + accommodationCost;
 
-        long remainingBudget = trip.getBudget() - totalCost;
+        long remainingBudget =
+                trip.getBudget()
+                        - totalCost;
 
         return new TripCostResponse(
                 mealCost,
@@ -46,14 +80,47 @@ public class TripCostService {
         );
     }
 
-    private long calculateMealCost(Trip trip) {
-        long tripDays = ChronoUnit.DAYS.between(
+    private long calculateTripDays(
+            Trip trip
+    ) {
+
+        return ChronoUnit.DAYS.between(
                 trip.getStartDate(),
                 trip.getEndDate()
         ) + 1;
+    }
 
-        return trip.getMealBudgetPerPersonPerDay()
+    private long calculateMealCost(
+            Trip trip,
+            long tripDays
+    ) {
+
+        return trip
+                .getMealBudgetPerPersonPerDay()
                 * trip.getPeopleCount()
                 * tripDays;
+    }
+
+    private long calculateTransportCost(
+            Long tripId
+    ) {
+
+        return transportSegmentRepository
+                .findAllByTripIdOrderByDayAndSequence(
+                        tripId
+                )
+                .stream()
+                .map(
+                        TransportSegment::getCost
+                )
+                .filter(
+                        cost ->
+                                cost != null
+                                        && cost > 0
+                )
+                .mapToLong(
+                        Long::longValue
+                )
+                .sum();
     }
 }
