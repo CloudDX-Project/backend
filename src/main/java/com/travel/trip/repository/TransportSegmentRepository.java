@@ -22,6 +22,11 @@ public interface TransportSegmentRepository
             Long tripDayId
     );
 
+    Optional<TransportSegment>
+    findTopByTripDayIdOrderBySequenceDesc(
+            Long tripDayId
+    );
+
     @Query("""
             select segment
             from TransportSegment segment

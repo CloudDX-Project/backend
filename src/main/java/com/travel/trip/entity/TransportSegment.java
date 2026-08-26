@@ -104,6 +104,39 @@ public class TransportSegment {
         this.cost = cost == null ? 0L : cost;
     }
 
+    public void updateDetails(
+            TransportMode mode,
+            String departureName,
+            String arrivalName,
+            Double departureLatitude,
+            Double departureLongitude,
+            Double arrivalLatitude,
+            Double arrivalLongitude,
+            LocalDateTime departureAt,
+            LocalDateTime arrivalAt
+    ) {
+        this.mode = mode;
+
+        this.departureName = departureName;
+        this.arrivalName = arrivalName;
+
+        this.departureLatitude = departureLatitude;
+        this.departureLongitude = departureLongitude;
+
+        this.arrivalLatitude = arrivalLatitude;
+        this.arrivalLongitude = arrivalLongitude;
+
+        this.departureAt = departureAt;
+        this.arrivalAt = arrivalAt;
+    }
+
+    public void changeSequence(
+            Integer sequence
+    ) {
+        this.sequence = sequence;
+    }
+
+
     public void updateRouteResult(
             Double distanceKm,
             Long durationMinutes,
