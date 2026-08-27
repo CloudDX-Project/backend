@@ -1,6 +1,6 @@
 package com.travel.trip.dto;
 
-import com.travel.trip.entity.TransportMode;
+import com.travel.trip.entity.SegmentTransportMode;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -21,7 +21,7 @@ public record TransportSegmentCreateRequest(
         @NotNull(
                 message = "교통수단은 필수입니다."
         )
-        TransportMode mode,
+        SegmentTransportMode mode,
 
         @NotBlank(
                 message = "출발지는 필수입니다."

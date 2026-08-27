@@ -1,13 +1,9 @@
 package com.travel.trip.entity;
 
-public enum TransportMode {
+public enum LocalTransportMode {
     WALK,
     PUBLIC_TRANSIT,
     TAXI,
     OWN_CAR,
-    RENTAL_CAR,
-    AIR,
-    KTX,
-    SRT,
-    EXPRESS_BUS
+    RENTAL_CAR
 }

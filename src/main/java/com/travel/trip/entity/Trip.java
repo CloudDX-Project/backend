@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -38,10 +39,24 @@ public class Trip {
     private LocalDate startDate;
 
     @Column(nullable = false)
+    private LocalTime startTime;
+
+    @Column(nullable = false)
     private LocalDate endDate;
 
     @Column(nullable = false)
+    private LocalTime endTime;
+
+    @Column(nullable = false)
     private int peopleCount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private MainTransportMode mainTransportMode;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private LocalTransportMode localTransportMode;
 
     @Column(nullable = false)
     private Long budget;
@@ -82,8 +97,12 @@ public class Trip {
             String departure,
             String destination,
             LocalDate startDate,
+            LocalTime startTime,
             LocalDate endDate,
+            LocalTime endTime,
             int peopleCount,
+            MainTransportMode mainTransportMode,
+            LocalTransportMode localTransportMode,
             Long budget,
             Long mealBudgetPerPersonPerDay,
             TripPace pace,
@@ -92,12 +111,23 @@ public class Trip {
         this.user = user;
         this.departure = departure;
         this.destination = destination;
+
         this.startDate = startDate;
+        this.startTime = startTime;
+
         this.endDate = endDate;
+        this.endTime = endTime;
+
         this.peopleCount = peopleCount;
+
+        this.mainTransportMode = mainTransportMode;
+        this.localTransportMode = localTransportMode;
+
         this.budget = budget;
         this.mealBudgetPerPersonPerDay = mealBudgetPerPersonPerDay;
+
         this.pace = pace;
+
         this.preferences = new HashSet<>(preferences);
     }
 

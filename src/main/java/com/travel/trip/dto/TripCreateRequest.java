@@ -1,12 +1,14 @@
 package com.travel.trip.dto;
 
+import com.travel.trip.entity.LocalTransportMode;
+import com.travel.trip.entity.MainTransportMode;
 import com.travel.trip.entity.TripPace;
 import com.travel.trip.entity.TripPreference;
 import jakarta.validation.constraints.*;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.Set;
-
 
 public record TripCreateRequest(
 
@@ -20,12 +22,24 @@ public record TripCreateRequest(
         @FutureOrPresent(message = "출발일은 오늘 이후여야 합니다.")
         LocalDate startDate,
 
+        @NotNull(message = "여행 시작 시간은 필수입니다.")
+        LocalTime startTime,
+
         @NotNull(message = "종료일은 필수입니다.")
         @FutureOrPresent(message = "종료일은 오늘 이후여야 합니다.")
         LocalDate endDate,
 
+        @NotNull(message = "여행 종료 시간은 필수입니다.")
+        LocalTime endTime,
+
         @Min(value = 1, message = "인원수는 1명 이상이어야 합니다.")
         int peopleCount,
+
+        @NotNull(message = "목적지까지의 교통수단은 필수입니다.")
+        MainTransportMode mainTransportMode,
+
+        @NotNull(message = "현지 교통수단은 필수입니다.")
+        LocalTransportMode localTransportMode,
 
         @NotNull(message = "예산은 필수입니다.")
         @PositiveOrZero(message = "예산은 0원 이상이어야 합니다.")

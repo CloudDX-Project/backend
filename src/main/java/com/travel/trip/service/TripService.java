@@ -52,9 +52,39 @@ public class TripService {
         }
     }
 
-    private void validateTripPeriod(TripCreateRequest request) {
-        if (request.endDate().isBefore(request.startDate())) {
-            throw new BusinessException(ErrorCode.INVALID_TRIP_PERIOD);
+    private void validateTripPeriod(
+            TripCreateRequest request
+    ) {
+
+        if (
+                request.endDate()
+                        .isBefore(
+                                request.startDate()
+                        )
+        ) {
+
+            throw new BusinessException(
+                    ErrorCode.INVALID_TRIP_PERIOD
+            );
+        }
+
+        if (
+                request.startDate()
+                        .equals(
+                                request.endDate()
+                        )
+
+                        &&
+
+                        !request.endTime()
+                                .isAfter(
+                                        request.startTime()
+                                )
+        ) {
+
+            throw new BusinessException(
+                    ErrorCode.INVALID_TRIP_TIME
+            );
         }
     }
 
@@ -74,8 +104,14 @@ public class TripService {
                 .departure(request.departure())
                 .destination(request.destination())
                 .startDate(request.startDate())
+                .startTime(request.startTime())
                 .endDate(request.endDate())
+                .endTime(request.endTime())
                 .peopleCount(request.peopleCount())
+                .mainTransportMode(
+                        request.mainTransportMode())
+                .localTransportMode(
+                        request.localTransportMode())
                 .budget(request.budget())
                 .mealBudgetPerPersonPerDay(
                         request.mealBudgetPerPersonPerDay()

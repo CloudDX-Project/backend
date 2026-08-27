@@ -1,6 +1,6 @@
 package com.travel.trip.dto;
 
-import com.travel.trip.entity.TransportMode;
+import com.travel.trip.entity.SegmentTransportMode;
 import com.travel.trip.entity.TransportSegment;
 
 import java.time.LocalDate;
@@ -18,7 +18,7 @@ public record TransportSegmentResponse(
 
         Integer sequence,
 
-        TransportMode mode,
+        SegmentTransportMode mode,
 
         String departureName,
 

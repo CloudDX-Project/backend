@@ -44,7 +44,7 @@ public class TransportSegment {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
-    private TransportMode mode;
+    private SegmentTransportMode mode;
 
     @Column(nullable = false, length = 100)
     private String departureName;
@@ -75,7 +75,7 @@ public class TransportSegment {
     public TransportSegment(
             TripDay tripDay,
             Integer sequence,
-            TransportMode mode,
+            SegmentTransportMode mode,
             String departureName,
             String arrivalName,
             Double departureLatitude,
@@ -105,7 +105,7 @@ public class TransportSegment {
     }
 
     public void updateDetails(
-            TransportMode mode,
+            SegmentTransportMode mode,
             String departureName,
             String arrivalName,
             Double departureLatitude,

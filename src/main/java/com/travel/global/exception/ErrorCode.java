@@ -95,6 +95,10 @@ public enum ErrorCode {
     INVALID_LOGIN(
             HttpStatus.UNAUTHORIZED,
             "이메일 또는 비밀번호가 올바르지 않습니다."
+    ),
+    INVALID_TRIP_TIME(
+            HttpStatus.BAD_REQUEST,
+            "같은 날짜인 경우 종료 시간은 시작 시간보다 늦어야 합니다."
     );
 
     private final HttpStatus status;
