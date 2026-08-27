@@ -15,8 +15,52 @@ public record TripCreateRequest(
         @NotBlank(message = "출발지는 필수입니다.")
         String departure,
 
+        @NotNull(message = "출발지 위도는 필수입니다.")
+        @DecimalMin(
+                value = "-90.0",
+                message = "출발지 위도는 -90 이상이어야 합니다."
+        )
+        @DecimalMax(
+                value = "90.0",
+                message = "출발지 위도는 90 이하여야 합니다."
+        )
+        Double departureLatitude,
+
+        @NotNull(message = "출발지 경도는 필수입니다.")
+        @DecimalMin(
+                value = "-180.0",
+                message = "출발지 경도는 -180 이상이어야 합니다."
+        )
+        @DecimalMax(
+                value = "180.0",
+                message = "출발지 경도는 180 이하여야 합니다."
+        )
+        Double departureLongitude,
+
         @NotBlank(message = "목적지는 필수입니다.")
         String destination,
+
+        @NotNull(message = "목적지 위도는 필수입니다.")
+        @DecimalMin(
+                value = "-90.0",
+                message = "목적지 위도는 -90 이상이어야 합니다."
+        )
+        @DecimalMax(
+                value = "90.0",
+                message = "목적지 위도는 90 이하여야 합니다."
+        )
+        Double destinationLatitude,
+
+        @NotNull(message = "목적지 경도는 필수입니다.")
+        @DecimalMin(
+                value = "-180.0",
+                message = "목적지 경도는 -180 이상이어야 합니다."
+        )
+        @DecimalMax(
+                value = "180.0",
+                message = "목적지 경도는 180 이하여야 합니다."
+        )
+        Double destinationLongitude,
 
         @NotNull(message = "출발일은 필수입니다.")
         @FutureOrPresent(message = "출발일은 오늘 이후여야 합니다.")

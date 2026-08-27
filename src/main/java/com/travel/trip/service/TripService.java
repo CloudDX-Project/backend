@@ -101,22 +101,39 @@ public class TripService {
 
         Trip trip = Trip.builder()
                 .user(user)
+
                 .departure(request.departure())
+                .departureLatitude(
+                        request.departureLatitude())
+                .departureLongitude(
+                        request.departureLongitude())
+
                 .destination(request.destination())
+                .destinationLatitude(
+                        request.destinationLatitude())
+                .destinationLongitude(
+                        request.destinationLongitude())
+
                 .startDate(request.startDate())
                 .startTime(request.startTime())
+
                 .endDate(request.endDate())
                 .endTime(request.endTime())
+
                 .peopleCount(request.peopleCount())
+
                 .mainTransportMode(
                         request.mainTransportMode())
                 .localTransportMode(
                         request.localTransportMode())
+
                 .budget(request.budget())
                 .mealBudgetPerPersonPerDay(
                         request.mealBudgetPerPersonPerDay()
                 )
+
                 .pace(request.pace())
+
                 .preferences(request.preferences())
                 .build();
 

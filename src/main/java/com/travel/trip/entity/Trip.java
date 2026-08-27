@@ -32,8 +32,20 @@ public class Trip {
     @Column(nullable = false, length = 100)
     private String departure;
 
+    @Column(nullable = false)
+    private Double departureLatitude;
+
+    @Column(nullable = false)
+    private Double departureLongitude;
+
     @Column(nullable = false, length = 100)
     private String destination;
+
+    @Column(nullable = false)
+    private Double destinationLatitude;
+
+    @Column(nullable = false)
+    private Double destinationLongitude;
 
     @Column(nullable = false)
     private LocalDate startDate;
@@ -94,23 +106,46 @@ public class Trip {
     @Builder
     public Trip(
             User user,
+
             String departure,
+            Double departureLatitude,
+            Double departureLongitude,
+
             String destination,
+            Double destinationLatitude,
+            Double destinationLongitude,
+
             LocalDate startDate,
             LocalTime startTime,
+
             LocalDate endDate,
             LocalTime endTime,
+
             int peopleCount,
+
             MainTransportMode mainTransportMode,
             LocalTransportMode localTransportMode,
+
             Long budget,
             Long mealBudgetPerPersonPerDay,
+
             TripPace pace,
+
             Set<TripPreference> preferences
     ) {
         this.user = user;
+
         this.departure = departure;
+        this.departureLatitude =
+                departureLatitude;
+        this.departureLongitude =
+                departureLongitude;
+
         this.destination = destination;
+        this.destinationLatitude =
+                destinationLatitude;
+        this.destinationLongitude =
+                destinationLongitude;
 
         this.startDate = startDate;
         this.startTime = startTime;

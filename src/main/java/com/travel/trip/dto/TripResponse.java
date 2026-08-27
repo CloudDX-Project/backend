@@ -9,8 +9,14 @@ import java.util.Set;
 
 public record TripResponse(
         Long id,
+
         String departure,
+        Double departureLatitude,
+        Double departureLongitude,
+
         String destination,
+        Double destinationLatitude,
+        Double destinationLongitude,
 
         LocalDate startDate,
         LocalTime startTime,
@@ -36,8 +42,14 @@ public record TripResponse(
     public static TripResponse from(Trip trip) {
         return new TripResponse(
                 trip.getId(),
+
                 trip.getDeparture(),
+                trip.getDepartureLatitude(),
+                trip.getDepartureLongitude(),
+
                 trip.getDestination(),
+                trip.getDestinationLatitude(),
+                trip.getDestinationLongitude(),
 
                 trip.getStartDate(),
                 trip.getStartTime(),
