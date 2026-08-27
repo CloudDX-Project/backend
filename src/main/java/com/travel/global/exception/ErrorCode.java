@@ -99,6 +99,15 @@ public enum ErrorCode {
     INVALID_TRIP_TIME(
             HttpStatus.BAD_REQUEST,
             "같은 날짜인 경우 종료 시간은 시작 시간보다 늦어야 합니다."
+    ),
+    WEATHER_API_KEY_NOT_CONFIGURED(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "기상청 API 인증키가 설정되지 않았습니다."
+    ),
+
+    WEATHER_API_ERROR(
+            HttpStatus.BAD_GATEWAY,
+            "기상청 날씨 API 호출 중 오류가 발생했습니다."
     );
 
     private final HttpStatus status;

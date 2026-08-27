@@ -33,3 +33,14 @@ springdoc:
 jwt:
   secret: ${JWT_SECRET}
   access-token-expiration: 3600000
+
+
+weather:
+  kma:
+    short:
+      service-key: ${KMA_SHORT_SERVICE_KEY:}
+      base-url: https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0
+
+    mid:
+      service-key: ${KMA_MID_SERVICE_KEY:}
+      base-url: https://apis.data.go.kr/1360000/MidFcstInfoService
