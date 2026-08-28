@@ -25,6 +25,24 @@ public class RedisConfig {
     ) {
 
         /*
+         * 중요:
+         *
+         * Spring Boot DevTools의 RestartClassLoader를
+         * 사용하도록 명시한다.
+         *
+         * 기본 JdkSerializationRedisSerializer()를 사용하면
+         * DevTools 환경에서 캐시 조회 시 ClassLoader 충돌이
+         * 발생할 수 있다.
+         */
+        ClassLoader classLoader =
+                RedisConfig.class.getClassLoader();
+
+        JdkSerializationRedisSerializer valueSerializer =
+                new JdkSerializationRedisSerializer(
+                        classLoader
+                );
+
+        /*
          * Redis 기본 캐시 설정
          *
          * Key   -> String
@@ -58,7 +76,7 @@ public class RedisConfig {
                                 RedisSerializationContext
                                         .SerializationPair
                                         .fromSerializer(
-                                                new JdkSerializationRedisSerializer()
+                                                valueSerializer
                                         )
                         )
 
