@@ -45,6 +45,10 @@ dependencies {
     //redis
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'org.springframework.boot:spring-boot-starter-cache'
+    // AWS Bedrock
+    implementation platform('software.amazon.awssdk:bom:2.54.2')
+    implementation 'software.amazon.awssdk:bedrockruntime'
+    implementation 'software.amazon.awssdk:auth'
 }
 
 tasks.named('test') {

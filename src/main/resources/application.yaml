@@ -44,3 +44,9 @@ weather:
     mid:
       service-key: ${KMA_MID_SERVICE_KEY:}
       base-url: https://apis.data.go.kr/1360000/MidFcstInfoService
+
+
+aws:
+  bedrock:
+    region: ${AWS_BEDROCK_REGION:ap-northeast-2}
+    model-id: ${BEDROCK_MODEL_ID:global.amazon.nova-2-lite-v1:0}
