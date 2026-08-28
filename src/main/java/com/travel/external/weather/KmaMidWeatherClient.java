@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.cache.annotation.Cacheable;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -89,7 +90,11 @@ public class KmaMidWeatherClient {
                 serviceKey;
     }
 
-
+    @Cacheable(
+            value = "weatherMid",
+            key = "#destination + ':' + #startDate + ':' + #endDate",
+            unless = "#result == null || #result.isEmpty()"
+    )
     public Map<LocalDate, WeatherCondition>
     getDailyWeather(
 
