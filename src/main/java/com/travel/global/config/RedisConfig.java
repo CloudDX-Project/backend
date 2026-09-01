@@ -118,6 +118,15 @@ public class RedisConfig {
                 )
         );
 
+        cacheConfigurations.put(
+
+                "flightSchedule",
+
+                defaultConfig.entryTtl(
+                        Duration.ofHours(12)
+                )
+        );
+
 
         /*
          * Redis CacheManager 생성

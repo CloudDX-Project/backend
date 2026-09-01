@@ -50,3 +50,9 @@ aws:
   bedrock:
     region: ${AWS_BEDROCK_REGION:ap-northeast-2}
     model-id: ${BEDROCK_MODEL_ID:global.amazon.nova-2-lite-v1:0}
+
+external:
+  aerodatabox:
+    base-url: https://aerodatabox.p.rapidapi.com
+    api-key: ${AERODATABOX_API_KEY:}
+    api-host: aerodatabox.p.rapidapi.com
