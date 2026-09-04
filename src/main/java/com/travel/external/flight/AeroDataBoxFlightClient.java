@@ -2,10 +2,10 @@ package com.travel.external.flight;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-import com.travel.flight.FlightCandidate;
-import com.travel.flight.FlightDirection;
+import com.travel.flight.dto.FlightCandidate;
+import com.travel.flight.type.FlightDirection;
 import com.travel.flight.FlightPriceEstimator;
-import com.travel.flight.FlightPriceType;
+import com.travel.flight.type.FlightPriceType;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;

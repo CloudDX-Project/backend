@@ -56,3 +56,14 @@ external:
     base-url: https://aerodatabox.p.rapidapi.com
     api-key: ${AERODATABOX_API_KEY:}
     api-host: aerodatabox.p.rapidapi.com
+
+  accommodation:
+      base-url: https://apis.data.go.kr
+
+      lodging:
+        path: /1741000/lodgings/info
+        service-key: ${LODGING_API_KEY:}
+
+      tourist-lodging:
+        path: /1741000/tourist_accommodations/info
+        service-key: ${TOURIST_LODGING_API_KEY:}

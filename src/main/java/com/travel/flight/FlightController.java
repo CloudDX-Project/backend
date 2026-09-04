@@ -1,5 +1,7 @@
 package com.travel.flight;
 
+import com.travel.flight.dto.FlightSearchRequest;
+import com.travel.flight.dto.FlightSearchResponse;
 import jakarta.validation.Valid;
 
 import org.springframework.web.bind.annotation.PostMapping;

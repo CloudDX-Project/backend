@@ -1,4 +1,4 @@
-package com.travel.flight;
+package com.travel.flight.dto;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;

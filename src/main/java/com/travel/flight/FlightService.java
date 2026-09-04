@@ -2,6 +2,10 @@ package com.travel.flight;
 
 import com.travel.external.flight.AeroDataBoxFlightClient;
 
+import com.travel.flight.dto.FlightCandidate;
+import com.travel.flight.dto.FlightSearchRequest;
+import com.travel.flight.dto.FlightSearchResponse;
+import com.travel.flight.type.FlightDirection;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;

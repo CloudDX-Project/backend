@@ -1,4 +1,7 @@
-package com.travel.flight;
+package com.travel.flight.dto;
+
+import com.travel.flight.type.FlightDirection;
+import com.travel.flight.type.FlightPriceType;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;

@@ -1,4 +1,4 @@
-package com.travel.flight;
+package com.travel.flight.dto;
 
 import java.util.List;
 
