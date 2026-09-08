@@ -93,76 +93,135 @@ public class TripService {
             Long userId,
             TripCreateRequest request
     ) {
+
         validateTripPeriod(request);
-        User user = userRepository.findById(userId)
-                .orElseThrow(() ->
-                        new BusinessException(ErrorCode.USER_NOT_FOUND)
-                );
 
-        Trip trip = Trip.builder()
-                .user(user)
+        User user =
+                userRepository.findById(userId)
+                        .orElseThrow(
+                                () ->
+                                        new BusinessException(
+                                                ErrorCode.USER_NOT_FOUND
+                                        )
+                        );
 
-                .departure(request.departure())
-                .departureLatitude(
-                        request.departureLatitude())
-                .departureLongitude(
-                        request.departureLongitude())
+        Trip trip =
+                Trip.builder()
 
-                .destination(request.destination())
-                .destinationLatitude(
-                        request.destinationLatitude())
-                .destinationLongitude(
-                        request.destinationLongitude())
+                        .user(user)
 
-                .startDate(request.startDate())
-                .startTime(request.startTime())
+                        .departure(
+                                request.departure()
+                        )
+                        .departureLatitude(
+                                request.departureLatitude()
+                        )
+                        .departureLongitude(
+                                request.departureLongitude()
+                        )
 
-                .endDate(request.endDate())
-                .endTime(request.endTime())
+                        .destination(
+                                request.destination()
+                        )
+                        .destinationLatitude(
+                                request.destinationLatitude()
+                        )
+                        .destinationLongitude(
+                                request.destinationLongitude()
+                        )
 
-                .peopleCount(request.peopleCount())
+                        .startDate(
+                                request.startDate()
+                        )
+                        .startTime(
+                                request.startTime()
+                        )
 
-                .mainTransportMode(
-                        request.mainTransportMode())
-                .localTransportMode(
-                        request.localTransportMode())
+                        .endDate(
+                                request.endDate()
+                        )
+                        .endTime(
+                                request.endTime()
+                        )
 
-                .budget(request.budget())
-                .mealBudgetPerPersonPerDay(
-                        request.mealBudgetPerPersonPerDay()
-                )
+                        .peopleCount(
+                                request.peopleCount()
+                        )
 
-                .pace(request.pace())
+                        .mainTransportMode(
+                                request.mainTransportMode()
+                        )
+                        .localTransportMode(
+                                request.localTransportMode()
+                        )
 
-                .preferences(request.preferences())
-                .build();
+                        .budget(
+                                request.budget()
+                        )
+                        .mealBudgetPerPersonPerDay(
+                                request.mealBudgetPerPersonPerDay()
+                        )
+
+                        .pace(
+                                request.pace()
+                        )
+
+                        .preferences(
+                                request.preferences()
+                        )
+
+                        .foodPreferences(
+                                request.foodPreferences()
+                        )
+
+                        .build();
 
         createTripDays(trip);
 
-        Trip savedTrip = tripRepository.save(trip);
+        Trip savedTrip =
+                tripRepository.save(trip);
 
-        return TripResponse.from(savedTrip);
+        return TripResponse.from(
+                savedTrip
+        );
     }
 
     public TripResponse getTrip(
             Long userId,
             Long tripId
     ) {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() ->
-                        new BusinessException(ErrorCode.TRIP_NOT_FOUND)
-                );
 
-        if (!trip.getUser().getId().equals(userId)) {
-            throw new BusinessException(ErrorCode.TRIP_NOT_FOUND);
+        Trip trip =
+                tripRepository.findById(tripId)
+                        .orElseThrow(
+                                () ->
+                                        new BusinessException(
+                                                ErrorCode.TRIP_NOT_FOUND
+                                        )
+                        );
+
+        if (
+                !trip.getUser()
+                        .getId()
+                        .equals(userId)
+        ) {
+
+            throw new BusinessException(
+                    ErrorCode.TRIP_NOT_FOUND
+            );
         }
 
-        return TripResponse.from(trip);
+        return TripResponse.from(
+                trip
+        );
     }
 
-    public List<TripResponse> getMyTrips(Long userId) {
+    public List<TripResponse> getMyTrips(
+            Long userId
+    ) {
 
-        return tripRepository.findAllByUserId(userId)
+        return tripRepository
+                .findAllByUserId(userId)
                 .stream()
                 .map(TripResponse::from)
                 .toList();

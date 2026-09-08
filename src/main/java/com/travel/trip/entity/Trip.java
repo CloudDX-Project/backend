@@ -80,14 +80,55 @@ public class Trip {
     @Column(nullable = false, length = 20)
     private TripPace pace;
 
+    /*
+     * 여행 테마
+     *
+     * NATURE
+     * SIGHTSEEING
+     * FOOD
+     * CAFE
+     * HISTORY
+     * ACTIVITY
+     * HEALING
+     */
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(
             name = "trip_preferences",
             joinColumns = @JoinColumn(name = "trip_id")
     )
     @Enumerated(EnumType.STRING)
-    @Column(name = "preference", nullable = false, length = 30)
-    private Set<TripPreference> preferences = new HashSet<>();
+    @Column(
+            name = "preference",
+            nullable = false,
+            length = 30
+    )
+    private Set<TripPreference> preferences =
+            new HashSet<>();
+
+    /*
+     * 음식 취향
+     *
+     * KOREAN
+     * JAPANESE
+     * WESTERN
+     * CHINESE
+     * ASIAN
+     * SNACK
+     * CAFE
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+            name = "trip_food_preferences",
+            joinColumns = @JoinColumn(name = "trip_id")
+    )
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "food_preference",
+            nullable = false,
+            length = 30
+    )
+    private Set<FoodPreference> foodPreferences =
+            new HashSet<>();
 
     @OneToMany(
             mappedBy = "trip",
@@ -95,7 +136,8 @@ public class Trip {
             orphanRemoval = true
     )
     @OrderBy("dayNumber ASC")
-    private List<TripDay> tripDays = new ArrayList<>();
+    private List<TripDay> tripDays =
+            new ArrayList<>();
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
@@ -131,7 +173,8 @@ public class Trip {
 
             TripPace pace,
 
-            Set<TripPreference> preferences
+            Set<TripPreference> preferences,
+            Set<FoodPreference> foodPreferences
     ) {
         this.user = user;
 
@@ -155,30 +198,49 @@ public class Trip {
 
         this.peopleCount = peopleCount;
 
-        this.mainTransportMode = mainTransportMode;
-        this.localTransportMode = localTransportMode;
+        this.mainTransportMode =
+                mainTransportMode;
+        this.localTransportMode =
+                localTransportMode;
 
         this.budget = budget;
-        this.mealBudgetPerPersonPerDay = mealBudgetPerPersonPerDay;
+
+        this.mealBudgetPerPersonPerDay =
+                mealBudgetPerPersonPerDay;
 
         this.pace = pace;
 
-        this.preferences = new HashSet<>(preferences);
+        this.preferences =
+                preferences == null
+                        ? new HashSet<>()
+                        : new HashSet<>(preferences);
+
+        this.foodPreferences =
+                foodPreferences == null
+                        ? new HashSet<>()
+                        : new HashSet<>(foodPreferences);
     }
 
-    public void addTripDay(TripDay tripDay) {
+    public void addTripDay(
+            TripDay tripDay
+    ) {
         this.tripDays.add(tripDay);
     }
 
     @PrePersist
     public void prePersist() {
-        LocalDateTime now = LocalDateTime.now();
+
+        LocalDateTime now =
+                LocalDateTime.now();
+
         this.createdAt = now;
         this.updatedAt = now;
     }
 
     @PreUpdate
     public void preUpdate() {
-        this.updatedAt = LocalDateTime.now();
+
+        this.updatedAt =
+                LocalDateTime.now();
     }
 }

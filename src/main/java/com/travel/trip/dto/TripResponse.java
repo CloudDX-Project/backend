@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Set;
 
 public record TripResponse(
+
         Long id,
 
         String departure,
@@ -36,11 +37,18 @@ public record TripResponse(
 
         Set<TripPreference> preferences,
 
+        Set<FoodPreference> foodPreferences,
+
         List<TripDayResponse> days
+
 ) {
 
-    public static TripResponse from(Trip trip) {
+    public static TripResponse from(
+            Trip trip
+    ) {
+
         return new TripResponse(
+
                 trip.getId(),
 
                 trip.getDeparture(),
@@ -67,11 +75,19 @@ public record TripResponse(
 
                 trip.getPace(),
 
-                Set.copyOf(trip.getPreferences()),
+                Set.copyOf(
+                        trip.getPreferences()
+                ),
+
+                Set.copyOf(
+                        trip.getFoodPreferences()
+                ),
 
                 trip.getTripDays()
                         .stream()
-                        .map(TripDayResponse::from)
+                        .map(
+                                TripDayResponse::from
+                        )
                         .toList()
         );
     }
