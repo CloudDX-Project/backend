@@ -13,7 +13,7 @@ import java.util.List;
 
 /**
  * accommodation_enrichment는 Python 수집기가 관리하는 테이블이므로
- * JPA Entity 대신 읽기 전용 JDBC Repository로 접근한다.
+ * JPA Entity 대신 읽기 전용 SQL repository로 접근한다.
  */
 @Repository
 public class AccommodationEnrichmentRepository {
@@ -51,12 +51,12 @@ public class AccommodationEnrichmentRepository {
             FROM accommodation_enrichment
             """;
 
-    /**
-     * 읍면동을 입력하지 않은 경우.
-     *
-     * 예:
-     * 제주특별자치도 + 제주시 전체 숙소 조회
-     */
+    private static final String FIND_ALL_BY_PROVIDER =
+            SELECT_COLUMNS + """
+            WHERE provider = :provider
+            ORDER BY provider_name
+            """;
+
     private static final String FIND_BY_CITY =
             SELECT_COLUMNS + """
             WHERE provider = :provider
@@ -65,12 +65,6 @@ public class AccommodationEnrichmentRepository {
             ORDER BY provider_name
             """;
 
-    /**
-     * 읍면동까지 입력한 경우.
-     *
-     * 예:
-     * 제주특별자치도 + 제주시 + 애월읍
-     */
     private static final String FIND_BY_TOWN =
             SELECT_COLUMNS + """
             WHERE provider = :provider
@@ -88,6 +82,27 @@ public class AccommodationEnrichmentRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /**
+     * 추천 API용.
+     * NAVER_HOTEL 전체 숙소를 조회한다.
+     */
+    public List<AccommodationEnrichmentData> findAllByProvider(
+            String provider
+    ) {
+        MapSqlParameterSource params =
+                new MapSqlParameterSource()
+                        .addValue("provider", provider);
+
+        return jdbcTemplate.query(
+                FIND_ALL_BY_PROVIDER,
+                params,
+                ROW_MAPPER
+        );
+    }
+
+    /**
+     * 기존 숙소 검색 API용.
+     */
     public List<AccommodationEnrichmentData> findByRegionAndProvider(
             String province,
             String city,
@@ -101,9 +116,6 @@ public class AccommodationEnrichmentRepository {
                         .addValue("city", city)
                         .addValue("provider", provider);
 
-        /*
-         * town이 존재하면 읍면동까지 검색.
-         */
         if (town != null && !town.isBlank()) {
 
             params.addValue("town", town);
@@ -115,10 +127,6 @@ public class AccommodationEnrichmentRepository {
             );
         }
 
-        /*
-         * town이 null 또는 빈 문자열이면
-         * 시 단위 전체 검색.
-         */
         return jdbcTemplate.query(
                 FIND_BY_CITY,
                 params,
