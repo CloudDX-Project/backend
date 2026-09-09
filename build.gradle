@@ -49,6 +49,8 @@ dependencies {
     implementation platform('software.amazon.awssdk:bom:2.54.2')
     implementation 'software.amazon.awssdk:bedrockruntime'
     implementation 'software.amazon.awssdk:auth'
+    //test
+    testRuntimeOnly 'com.h2database:h2'
 }
 
 tasks.named('test') {

@@ -1,0 +1,40 @@
+spring:
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:travel_test;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+
+  cache:
+    type: simple
+
+  data:
+    redis:
+      repositories:
+        enabled: false
+
+jwt:
+  secret: github-actions-test-secret-key-must-be-long-enough-123456789
+  access-token-expiration: 3600000
+
+weather:
+  kma:
+    short:
+      service-key: ""
+    mid:
+      service-key: ""
+
+external:
+  aerodatabox:
+    api-key: ""
+
+  accommodation:
+    lodging:
+      service-key: ""
+    tourist-lodging:
+      service-key: ""
