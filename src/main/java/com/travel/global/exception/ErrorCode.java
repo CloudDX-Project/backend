@@ -50,6 +50,27 @@ public enum ErrorCode {
             "여행 정보를 찾을 수 없습니다."
     ),
 
+
+    TRIP_PLAN_ACCOMMODATION_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "선택한 숙소 정보를 찾을 수 없습니다."
+    ),
+
+    TRIP_PLAN_ACCOMMODATION_COORDINATES_MISSING(
+            HttpStatus.BAD_REQUEST,
+            "선택한 숙소의 위도/경도 정보가 없습니다."
+    ),
+
+    TRIP_PLAN_FLIGHT_SELECTION_REQUIRED(
+            HttpStatus.BAD_REQUEST,
+            "항공 여행은 가는 편과 오는 편 항공편 선택이 필요합니다."
+    ),
+
+    TRIP_PLAN_INVALID_FLIGHT_SELECTION(
+            HttpStatus.BAD_REQUEST,
+            "선택한 항공편이 여행 정보와 일치하지 않습니다."
+    ),
+
     INVALID_TRIP_PERIOD(
             HttpStatus.BAD_REQUEST,
             "종료일은 출발일보다 빠를 수 없습니다."

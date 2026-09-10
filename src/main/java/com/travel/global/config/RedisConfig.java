@@ -143,6 +143,35 @@ public class RedisConfig {
 
 
         /*
+         * TripPlan 일정 생성용 최종 후보군.
+         *
+         * 각 도메인의 기존 recommend 로직에서
+         * 자체 점수 + Bedrock reranking까지 끝난
+         * 최대 30개를 저장한다.
+         */
+        cacheConfigurations.put(
+                "tripPlanAttractionCandidates",
+                defaultConfig.entryTtl(
+                        Duration.ofMinutes(30)
+                )
+        );
+
+        cacheConfigurations.put(
+                "tripPlanRestaurantCandidates",
+                defaultConfig.entryTtl(
+                        Duration.ofMinutes(30)
+                )
+        );
+
+        cacheConfigurations.put(
+                "tripPlanCafeCandidates",
+                defaultConfig.entryTtl(
+                        Duration.ofMinutes(30)
+                )
+        );
+
+
+        /*
          * Redis CacheManager 생성
          */
         return RedisCacheManager

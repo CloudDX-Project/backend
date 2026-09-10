@@ -14,103 +14,91 @@ import software.amazon.awssdk.services.bedrockruntime.model.Message;
 @RequiredArgsConstructor
 public class BedrockClient {
 
+    private static final int DEFAULT_MAX_TOKENS =
+            1000;
+
+    private static final float DEFAULT_TEMPERATURE =
+            0.2F;
+
     private final BedrockRuntimeClient bedrockRuntimeClient;
 
     @Value("${aws.bedrock.model-id}")
     private String modelId;
 
-
+    /*
+     * 기존 관광지 / 식당 / 카페 추천 로직은
+     * 이 메서드를 그대로 사용한다.
+     */
     public String converse(
             String prompt
     ) {
 
+        return converse(
+                prompt,
+                DEFAULT_MAX_TOKENS,
+                DEFAULT_TEMPERATURE
+        );
+    }
+
+    /*
+     * 최종 여행일정 Planner처럼
+     * 출력 JSON이 긴 경우 maxTokens와 temperature를
+     * 호출부에서 별도로 지정할 수 있게 추가한다.
+     */
+    public String converse(
+            String prompt,
+            int maxTokens,
+            float temperature
+    ) {
+
         Message message =
                 Message.builder()
-
-                        /*
-                         * 사용자 메시지
-                         */
                         .role(
                                 ConversationRole.USER
                         )
-
-                        /*
-                         * 실제 Prompt
-                         */
                         .content(
                                 ContentBlock.fromText(
                                         prompt
                                 )
                         )
-
                         .build();
-
 
         try {
 
             ConverseResponse response =
-
                     bedrockRuntimeClient
                             .converse(
                                     request ->
                                             request
-
-                                                    /*
-                                                     * Nova 2 Lite
-                                                     */
                                                     .modelId(
                                                             modelId
                                                     )
-
-                                                    /*
-                                                     * 대화 메시지
-                                                     */
                                                     .messages(
                                                             message
                                                     )
-
-                                                    /*
-                                                     * 생성 옵션
-                                                     */
                                                     .inferenceConfig(
                                                             config ->
                                                                     config
-
-                                                                            /*
-                                                                             * 최대 출력 Token
-                                                                             */
                                                                             .maxTokens(
-                                                                                    1000
+                                                                                    maxTokens
                                                                             )
-
-                                                                            /*
-                                                                             * 낮을수록
-                                                                             * 일관적인 답변
-                                                                             */
                                                                             .temperature(
-                                                                                    0.2F
+                                                                                    temperature
                                                                             )
                                                     )
                             );
 
-
-            /*
-             * 응답 검증
-             */
             if (
                     response.output() == null
-                            ||
-                            response.output()
-                                    .message() == null
-                            ||
-                            response.output()
-                                    .message()
-                                    .content() == null
-                            ||
-                            response.output()
-                                    .message()
-                                    .content()
-                                    .isEmpty()
+                            || response.output()
+                            .message() == null
+                            || response.output()
+                            .message()
+                            .content() == null
+                            || response.output()
+                            .message()
+                            .content()
+                            .isEmpty()
             ) {
 
                 throw new IllegalStateException(
@@ -118,10 +106,6 @@ public class BedrockClient {
                 );
             }
 
-
-            /*
-             * 첫 번째 Text Content 반환
-             */
             return response
                     .output()
                     .message()
@@ -129,10 +113,7 @@ public class BedrockClient {
                     .get(0)
                     .text();
 
-
-        } catch (
-                BedrockRuntimeException e
-        ) {
+        } catch (BedrockRuntimeException e) {
 
             System.out.println(
                     "===== BEDROCK API ERROR ====="
@@ -147,11 +128,7 @@ public class BedrockClient {
                             + e.statusCode()
             );
 
-
-            if (
-                    e.awsErrorDetails()
-                            != null
-            ) {
+            if (e.awsErrorDetails() != null) {
 
                 System.out.println(
                         "ERROR CODE = "
@@ -166,11 +143,9 @@ public class BedrockClient {
                 );
             }
 
-
             System.out.println(
                     "============================="
             );
-
 
             throw new IllegalStateException(
                     "Bedrock 호출 중 오류가 발생했습니다.",

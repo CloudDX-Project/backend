@@ -10,6 +10,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * accommodation_enrichment는 Python 수집기가 관리하는 테이블이므로
@@ -74,6 +75,13 @@ public class AccommodationEnrichmentRepository {
             ORDER BY provider_name
             """;
 
+    private static final String FIND_BY_ACCOMMODATION_ID_AND_PROVIDER =
+            SELECT_COLUMNS + """
+            WHERE accommodation_id = :accommodationId
+              AND provider = :provider
+            LIMIT 1
+            """;
+
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
     public AccommodationEnrichmentRepository(
@@ -98,6 +106,35 @@ public class AccommodationEnrichmentRepository {
                 params,
                 ROW_MAPPER
         );
+    }
+
+    /**
+     * 메인 화면에서 사용자가 선택한 숙소를
+     * TripPlan 생성 시 다시 조회한다.
+     */
+    public Optional<AccommodationEnrichmentData> findByAccommodationIdAndProvider(
+            Long accommodationId,
+            String provider
+    ) {
+
+        MapSqlParameterSource params =
+                new MapSqlParameterSource()
+                        .addValue(
+                                "accommodationId",
+                                accommodationId
+                        )
+                        .addValue(
+                                "provider",
+                                provider
+                        );
+
+        return jdbcTemplate.query(
+                        FIND_BY_ACCOMMODATION_ID_AND_PROVIDER,
+                        params,
+                        ROW_MAPPER
+                )
+                .stream()
+                .findFirst();
     }
 
     /**

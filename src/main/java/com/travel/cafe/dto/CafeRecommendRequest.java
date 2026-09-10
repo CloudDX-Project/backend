@@ -29,7 +29,7 @@ public record CafeRecommendRequest(
         Set<TripPreference> preferences,
 
         @Min(1)
-        @Max(15)
+        @Max(30)
         Integer limit
 
 ) {
