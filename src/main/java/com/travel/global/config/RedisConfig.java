@@ -118,12 +118,26 @@ public class RedisConfig {
                 )
         );
 
+        /*
+         * 항공 스케줄
+         */
         cacheConfigurations.put(
-
                 "flightSchedule",
-
                 defaultConfig.entryTtl(
                         Duration.ofHours(12)
+                )
+        );
+
+        /*
+         * 카페 추천 1차 후보군
+         *
+         * DB -> 거리/평점/카페특성 점수 계산 결과를
+         * Bedrock 호출 직전 상태로 저장한다.
+         */
+        cacheConfigurations.put(
+                "cafeCandidates",
+                defaultConfig.entryTtl(
+                        Duration.ofMinutes(30)
                 )
         );
 
