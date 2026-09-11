@@ -56,6 +56,21 @@ public record AccommodationRecommendation(
 
         Integer starCount,
 
+        /**
+         * 평균 숙박 가격.
+         *
+         * 일부 숙소는 null일 수 있음.
+         * 가격 계산 / 정렬용 보조 데이터.
+         */
+        Long priceAvg,
+
+        /**
+         * 네이버에서 수집한 가격 표시 문자열.
+         *
+         * 화면 표시용 가격 데이터.
+         */
+        String priceText,
+
         String representativeImageUrl,
 
         String providerUrl,

@@ -205,9 +205,13 @@ public class AccommodationRecommendationService {
      * 하나의 호텔 점수 계산
      */
     private ScoredAccommodation score(
+
             AccommodationEnrichmentData hotel,
+
             double destinationLatitude,
+
             double destinationLongitude,
+
             double globalAverageRatingScore
     ) {
 
@@ -216,11 +220,16 @@ public class AccommodationRecommendationService {
          */
         double distanceKm =
                 calculateDistanceKm(
+
                         destinationLatitude,
+
                         destinationLongitude,
+
                         hotel.providerLatitude(),
+
                         hotel.providerLongitude()
                 );
+
 
         /*
          * 직선거리 기반 예상 운전시간
@@ -230,6 +239,7 @@ public class AccommodationRecommendationService {
                         distanceKm
                 );
 
+
         /*
          * 위치 점수
          */
@@ -238,14 +248,18 @@ public class AccommodationRecommendationService {
                         estimatedDriveMinutes
                 );
 
+
         /*
          * 평점 + 리뷰수 Bayesian 보정
          */
         double bayesianRatingScore =
                 calculateBayesianRatingScore(
+
                         hotel,
+
                         globalAverageRatingScore
                 );
+
 
         /*
          * 최종 추천점수
@@ -256,6 +270,7 @@ public class AccommodationRecommendationService {
         double recommendationScore =
                 driveScore * DRIVE_WEIGHT
                         + bayesianRatingScore * RATING_WEIGHT;
+
 
         AccommodationRecommendation recommendation =
                 new AccommodationRecommendation(
@@ -278,21 +293,34 @@ public class AccommodationRecommendationService {
 
                         hotel.providerLongitude(),
 
+                        /*
+                         * 거리
+                         */
                         round(
                                 distanceKm,
                                 2
                         ),
 
+                        /*
+                         * 예상 이동시간
+                         */
                         estimatedDriveMinutes,
 
+                        /*
+                         * 원본 평점
+                         */
                         hotel.rating(),
 
                         hotel.ratingScale(),
 
+                        /*
+                         * 리뷰 수
+                         */
                         hotel.reviewCount(),
 
                         /*
-                         * 0~1 score를 다시 10점 만점으로 표시
+                         * Bayesian 평점
+                         * 0~1 → 10점 만점
                          */
                         round(
                                 bayesianRatingScore * 10.0,
@@ -300,17 +328,39 @@ public class AccommodationRecommendationService {
                         ),
 
                         /*
-                         * 프론트 표시용 0~100
+                         * 추천 점수
+                         * 0~1 → 100점 만점
                          */
                         round(
                                 recommendationScore * 100.0,
                                 2
                         ),
 
+                        /*
+                         * 호텔 성급
+                         */
                         hotel.starCount(),
 
+                        /*
+                         * 평균 가격
+                         *
+                         * DB 값이 없으면 null 그대로 반환
+                         */
+                        hotel.priceAvg(),
+
+                        /*
+                         * 화면 표시용 가격 문자열
+                         */
+                        hotel.priceText(),
+
+                        /*
+                         * 대표 이미지
+                         */
                         hotel.representativeImageUrl(),
 
+                        /*
+                         * 네이버 숙소 URL
+                         */
                         hotel.providerUrl(),
 
                         hotel.checkInTime(),
@@ -322,9 +372,13 @@ public class AccommodationRecommendationService {
                         hotel.phoneNumber()
                 );
 
+
         return new ScoredAccommodation(
+
                 recommendation,
+
                 bayesianRatingScore,
+
                 recommendationScore
         );
     }
