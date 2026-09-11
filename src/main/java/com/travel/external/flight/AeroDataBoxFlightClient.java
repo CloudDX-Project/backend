@@ -31,6 +31,20 @@ public class AeroDataBoxFlightClient {
             DateTimeFormatter.ofPattern(
                     "yyyy-MM-dd'T'HH:mm"
             );
+    /*
+     * AeroDataBox 연속 호출 제한
+     *
+     * 최초 항공 검색 시
+     * 가는 편 2번 + 오는 편 2번의
+     * 외부 API 요청이 발생하므로
+     * 요청 사이에 간격을 둔다.
+     */
+    private static final long MIN_REQUEST_INTERVAL_MS =
+            1200L;
+
+
+    private long lastRequestTime =
+            0L;
 
 
     private final RestClient restClient;
@@ -40,6 +54,53 @@ public class AeroDataBoxFlightClient {
     private final String apiHost;
 
     private final FlightPriceEstimator priceEstimator;
+
+
+    private synchronized void waitForRateLimit() {
+
+        long now =
+                System.currentTimeMillis();
+
+
+        long elapsed =
+                now
+                        - lastRequestTime;
+
+
+        long waitTime =
+                MIN_REQUEST_INTERVAL_MS
+                        - elapsed;
+
+
+        if (
+                waitTime > 0
+        ) {
+
+            try {
+
+                Thread.sleep(
+                        waitTime
+                );
+
+            } catch (
+                    InterruptedException e
+            ) {
+
+                Thread.currentThread()
+                        .interrupt();
+
+
+                throw new IllegalStateException(
+                        "AeroDataBox 요청 대기 중 중단되었습니다.",
+                        e
+                );
+            }
+        }
+
+
+        lastRequestTime =
+                System.currentTimeMillis();
+    }
 
 
     public AeroDataBoxFlightClient(
@@ -118,6 +179,12 @@ public class AeroDataBoxFlightClient {
 
 
         try {
+
+            /*
+             * AeroDataBox / RapidAPI 연속 호출 방지
+             */
+            waitForRateLimit();
+
 
             AeroDataBoxResponse response =
 
@@ -202,18 +269,16 @@ public class AeroDataBoxFlightClient {
 
             /*
              * AeroDataBox는
+             * 출발공항의 전체 출발 항공편을 반환한다.
              *
-             * GMP 출발 전체 항공편을 반환한다.
+             * 여기에서
              *
-             * 여기에서:
-             *
-             * 1. Cargo 제외
+             * 1. 화물기 제외
              * 2. 국내선만
              * 3. 원하는 도착공항만
              *
-             * 필터한다.
+             * 필터링한다.
              */
-
             List<FlightCandidate> candidates =
 
                     response
@@ -231,7 +296,7 @@ public class AeroDataBoxFlightClient {
                             )
 
                             /*
-                             * 도착공항 데이터 존재
+                             * 도착공항 데이터 존재 여부
                              */
                             .filter(
                                     flight ->
@@ -255,7 +320,7 @@ public class AeroDataBoxFlightClient {
                             )
 
                             /*
-                             * 목적공항 필터
+                             * 원하는 목적공항만
                              */
                             .filter(
                                     flight ->
@@ -269,7 +334,7 @@ public class AeroDataBoxFlightClient {
                             )
 
                             /*
-                             * 우리 DTO로 변환
+                             * FlightCandidate DTO 변환
                              */
                             .map(
                                     flight ->
@@ -306,7 +371,7 @@ public class AeroDataBoxFlightClient {
 
             /*
              * Redis JDK 직렬화에서도
-             * 명확한 ArrayList 형태로 저장.
+             * 명확한 ArrayList 형태로 저장
              */
             return new ArrayList<>(
                     candidates
@@ -323,7 +388,7 @@ public class AeroDataBoxFlightClient {
 
 
             /*
-             * 해당 날짜/시간에 데이터 없음
+             * 해당 날짜 / 시간에 항공편 없음
              */
             if (
                     status == 404
@@ -379,6 +444,8 @@ public class AeroDataBoxFlightClient {
             );
         }
     }
+
+
 
 
     private FlightCandidate convert(
