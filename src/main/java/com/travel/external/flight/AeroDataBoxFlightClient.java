@@ -56,7 +56,9 @@ public class AeroDataBoxFlightClient {
     private final FlightPriceEstimator priceEstimator;
 
 
-    private synchronized void waitForRateLimit() {
+private synchronized void waitForRateLimit() {
+
+    while (true) {
 
         long now =
                 System.currentTimeMillis();
@@ -73,34 +75,38 @@ public class AeroDataBoxFlightClient {
 
 
         if (
-                waitTime > 0
+                waitTime <= 0
         ) {
 
-            try {
+            lastRequestTime =
+                    now;
 
-                Thread.sleep(
-                        waitTime
-                );
-
-            } catch (
-                    InterruptedException e
-            ) {
-
-                Thread.currentThread()
-                        .interrupt();
-
-
-                throw new IllegalStateException(
-                        "AeroDataBox 요청 대기 중 중단되었습니다.",
-                        e
-                );
-            }
+            return;
         }
 
 
-        lastRequestTime =
-                System.currentTimeMillis();
+        try {
+
+            wait(
+                    waitTime
+            );
+
+        } catch (
+                InterruptedException e
+        ) {
+
+            Thread.currentThread()
+                    .interrupt();
+
+
+            throw new IllegalStateException(
+                    "AeroDataBox 요청 대기 중 중단되었습니다.",
+                    e
+            );
+        }
     }
+}
+
 
 
     public AeroDataBoxFlightClient(
