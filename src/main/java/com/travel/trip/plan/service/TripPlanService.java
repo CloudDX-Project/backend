@@ -1,20 +1,22 @@
 package com.travel.trip.plan.service;
 
-import com.travel.flight.AirportMapper;
 import com.travel.flight.dto.FlightCandidate;
-import com.travel.flight.type.FlightDirection;
 import com.travel.global.exception.BusinessException;
 import com.travel.global.exception.ErrorCode;
 import com.travel.trip.entity.MainTransportMode;
 import com.travel.trip.entity.SegmentTransportMode;
+import com.travel.trip.entity.TransportSegment;
 import com.travel.trip.entity.Trip;
+import com.travel.trip.entity.TripDay;
 import com.travel.trip.plan.dto.TripPlanCandidatePool;
-import com.travel.trip.plan.dto.TripPlanCreateRequest;
 import com.travel.trip.plan.dto.TripPlanDayResponse;
 import com.travel.trip.plan.dto.TripPlanItemResponse;
 import com.travel.trip.plan.dto.TripPlanResponse;
 import com.travel.trip.plan.dto.TripPlanSelectedAccommodation;
+import com.travel.trip.plan.entity.TripPlanItem;
+import com.travel.trip.plan.repository.TripPlanItemRepository;
 import com.travel.trip.plan.type.TripPlanItemType;
+import com.travel.trip.repository.TransportSegmentRepository;
 import com.travel.trip.repository.TripRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,30 +38,34 @@ public class TripPlanService {
             90;
 
     private final TripRepository tripRepository;
-    private final AirportMapper airportMapper;
+    private final TripPlanItemRepository tripPlanItemRepository;
+    private final TransportSegmentRepository transportSegmentRepository;
     private final TripPlanCandidateService candidateService;
     private final TripPlanBedrockService bedrockService;
 
     public TripPlanService(
             TripRepository tripRepository,
-            AirportMapper airportMapper,
+            TripPlanItemRepository tripPlanItemRepository,
+            TransportSegmentRepository transportSegmentRepository,
             TripPlanCandidateService candidateService,
             TripPlanBedrockService bedrockService
     ) {
         this.tripRepository =
                 tripRepository;
-        this.airportMapper =
-                airportMapper;
+        this.tripPlanItemRepository =
+                tripPlanItemRepository;
+        this.transportSegmentRepository =
+                transportSegmentRepository;
         this.candidateService =
                 candidateService;
         this.bedrockService =
                 bedrockService;
     }
 
+    @Transactional
     public TripPlanResponse createPlan(
             Long userId,
-            Long tripId,
-            TripPlanCreateRequest request
+            Long tripId
     ) {
 
         Trip trip =
@@ -74,24 +80,30 @@ public class TripPlanService {
                                         )
                         );
 
-        validateSelectedFlights(
+        FlightCandidate outboundFlight =
+                trip.getOutboundFlightCandidate();
+
+        FlightCandidate returnFlight =
+                trip.getReturnFlightCandidate();
+
+        validatePersistedSelections(
                 trip,
-                request
+                outboundFlight,
+                returnFlight
         );
 
         TripPlanCandidatePool candidatePool =
                 candidateService.buildCandidatePool(
                         userId,
-                        trip,
-                        request.accommodationId()
+                        trip
                 );
 
         TripPlanBedrockService.PlannerResult plannerResult =
                 bedrockService.createPlan(
                         trip,
                         candidatePool,
-                        request.outboundFlight(),
-                        request.returnFlight()
+                        outboundFlight,
+                        returnFlight
                 );
 
         List<TripPlanDayResponse> days =
@@ -99,9 +111,19 @@ public class TripPlanService {
                         trip,
                         candidatePool,
                         plannerResult.days(),
-                        request.outboundFlight(),
-                        request.returnFlight()
+                        outboundFlight,
+                        returnFlight
                 );
+
+        persistPlanItems(
+                trip,
+                days
+        );
+
+        rebuildMockTransportSegments(
+                trip,
+                days
+        );
 
         return new TripPlanResponse(
                 trip.getId(),
@@ -110,8 +132,8 @@ public class TripPlanService {
                 trip.getMainTransportMode(),
                 trip.getLocalTransportMode(),
                 candidatePool.accommodation(),
-                request.outboundFlight(),
-                request.returnFlight(),
+                outboundFlight,
+                returnFlight,
                 candidatePool.weather(),
                 candidatePool.attractions().size(),
                 candidatePool.restaurants().size(),
@@ -120,134 +142,303 @@ public class TripPlanService {
         );
     }
 
-    private void validateSelectedFlights(
+    private void validatePersistedSelections(
             Trip trip,
-            TripPlanCreateRequest request
+            FlightCandidate outboundFlight,
+            FlightCandidate returnFlight
     ) {
+        if (trip.getSelectedAccommodation() == null) {
+            throw new BusinessException(
+                    ErrorCode.TRIP_PLAN_ACCOMMODATION_NOT_FOUND
+            );
+        }
 
         if (
                 trip.getMainTransportMode()
-                        != MainTransportMode.AIR
+                        == MainTransportMode.AIR
+                        && (outboundFlight == null || returnFlight == null)
         ) {
-            return;
-        }
-
-        FlightCandidate outbound =
-                request.outboundFlight();
-
-        FlightCandidate returning =
-                request.returnFlight();
-
-        if (outbound == null || returning == null) {
             throw new BusinessException(
                     ErrorCode.TRIP_PLAN_FLIGHT_SELECTION_REQUIRED
             );
         }
-
-        if (
-                outbound.departureTime() == null
-                        || outbound.arrivalTime() == null
-                        || returning.departureTime() == null
-                        || returning.arrivalTime() == null
-        ) {
-            throw new BusinessException(
-                    ErrorCode.TRIP_PLAN_INVALID_FLIGHT_SELECTION
-            );
-        }
-
-        String departureAirport =
-                airportMapper.resolve(
-                        trip.getDeparture()
-                );
-
-        String destinationAirport =
-                airportMapper.resolve(
-                        trip.getDestination()
-                );
-
-        boolean outboundValid =
-                outbound.direction()
-                        == FlightDirection.OUTBOUND
-                        && equalsAirport(
-                        departureAirport,
-                        outbound.departureAirport()
-                )
-                        && equalsAirport(
-                        destinationAirport,
-                        outbound.arrivalAirport()
-                )
-                        && outbound.departureTime()
-                        .toLocalDate()
-                        .equals(
-                                trip.getStartDate()
-                        )
-                        && !outbound.departureTime()
-                        .isBefore(
-                                LocalDateTime.of(
-                                        trip.getStartDate(),
-                                        trip.getStartTime()
-                                )
-                        )
-                        && outbound.arrivalTime()
-                        .isAfter(
-                                outbound.departureTime()
-                        );
-
-        boolean returnValid =
-                returning.direction()
-                        == FlightDirection.RETURN
-                        && equalsAirport(
-                        destinationAirport,
-                        returning.departureAirport()
-                )
-                        && equalsAirport(
-                        departureAirport,
-                        returning.arrivalAirport()
-                )
-                        && returning.departureTime()
-                        .toLocalDate()
-                        .equals(
-                                trip.getEndDate()
-                        )
-                        && returning.arrivalTime()
-                        .isAfter(
-                                returning.departureTime()
-                        )
-                        && !returning.arrivalTime()
-                        .isAfter(
-                                LocalDateTime.of(
-                                        trip.getEndDate(),
-                                        trip.getEndTime()
-                                )
-                        );
-
-        boolean chronological =
-                returning.departureTime()
-                        .isAfter(
-                                outbound.arrivalTime()
-                        );
-
-        if (
-                !outboundValid
-                        || !returnValid
-                        || !chronological
-        ) {
-            throw new BusinessException(
-                    ErrorCode.TRIP_PLAN_INVALID_FLIGHT_SELECTION
-            );
-        }
     }
 
-    private boolean equalsAirport(
-            String expected,
-            String actual
+    private void persistPlanItems(
+            Trip trip,
+            List<TripPlanDayResponse> days
     ) {
+        Map<Integer, TripDay> tripDayMap =
+                new HashMap<>();
 
-        return expected != null
-                && actual != null
-                && expected.equalsIgnoreCase(
-                actual
+        for (TripDay tripDay : trip.getTripDays()) {
+            tripDay.clearPlanItems();
+            tripDayMap.put(
+                    tripDay.getDayNumber(),
+                    tripDay
+            );
+        }
+
+        /*
+         * orphanRemoval DELETE를 먼저 DB에 반영해
+         * (trip_day_id, item_order) unique 충돌을 방지한다.
+         */
+        tripRepository.flush();
+
+        List<TripPlanItem> newItems =
+                new ArrayList<>();
+
+        for (TripPlanDayResponse day : days) {
+            TripDay tripDay =
+                    tripDayMap.get(
+                            day.dayNumber()
+                    );
+
+            if (tripDay == null) {
+                continue;
+            }
+
+            for (TripPlanItemResponse item : day.items()) {
+                TripPlanItem entity =
+                        TripPlanItem.from(
+                                tripDay,
+                                item
+                        );
+
+                tripDay.addPlanItem(entity);
+                newItems.add(entity);
+            }
+        }
+
+        tripPlanItemRepository.saveAll(
+                newItems
         );
+
+        tripPlanItemRepository.flush();
+    }
+
+    private void rebuildMockTransportSegments(
+            Trip trip,
+            List<TripPlanDayResponse> days
+    ) {
+        Map<Integer, TripDay> tripDayMap =
+                new HashMap<>();
+
+        for (TripDay tripDay : trip.getTripDays()) {
+            tripDay.clearTransportSegments();
+            tripDayMap.put(
+                    tripDay.getDayNumber(),
+                    tripDay
+            );
+        }
+
+        tripRepository.flush();
+
+        List<TransportSegment> newSegments =
+                new ArrayList<>();
+
+        for (TripPlanDayResponse day : days) {
+            TripDay tripDay =
+                    tripDayMap.get(
+                            day.dayNumber()
+                    );
+
+            if (tripDay == null) {
+                continue;
+            }
+
+            int sequence = 1;
+
+            List<TripPlanItemResponse> items =
+                    day.items();
+
+            for (int i = 1; i < items.size(); i++) {
+                TripPlanItemResponse previous =
+                        items.get(i - 1);
+
+                TripPlanItemResponse current =
+                        items.get(i);
+
+                SegmentTransportMode mode =
+                        current.transportModeFromPrevious();
+
+                if (mode == null || mode == SegmentTransportMode.AIR) {
+                    continue;
+                }
+
+                if (!hasCoordinates(previous) || !hasCoordinates(current)) {
+                    continue;
+                }
+
+                double straightDistanceKm =
+                        haversineKm(
+                                previous.latitude(),
+                                previous.longitude(),
+                                current.latitude(),
+                                current.longitude()
+                        );
+
+                double distanceKm =
+                        roundOneDecimal(
+                                straightDistanceKm
+                                        * roadDistanceFactor(mode)
+                        );
+
+                long durationMinutes =
+                        Math.max(
+                                1L,
+                                Math.round(
+                                        distanceKm
+                                                / averageSpeedKmh(mode)
+                                                * 60.0
+                                )
+                        );
+
+                long cost =
+                        mockTransportCost(
+                                mode,
+                                distanceKm
+                        );
+
+                LocalDateTime departureAt =
+                        previous.endAt() != null
+                                ? previous.endAt()
+                                : previous.startAt();
+
+                LocalDateTime arrivalAt =
+                        departureAt == null
+                                ? current.startAt()
+                                : departureAt.plusMinutes(
+                                durationMinutes
+                        );
+
+                TransportSegment segment =
+                        TransportSegment.builder()
+                                .tripDay(tripDay)
+                                .sequence(sequence++)
+                                .mode(mode)
+                                .departureName(previous.name())
+                                .arrivalName(current.name())
+                                .departureLatitude(previous.latitude())
+                                .departureLongitude(previous.longitude())
+                                .arrivalLatitude(current.latitude())
+                                .arrivalLongitude(current.longitude())
+                                .departureAt(departureAt)
+                                .arrivalAt(arrivalAt)
+                                .distanceKm(distanceKm)
+                                .durationMinutes(durationMinutes)
+                                .cost(cost)
+                                .build();
+
+                tripDay.addTransportSegment(
+                        segment
+                );
+
+                newSegments.add(
+                        segment
+                );
+            }
+        }
+
+        transportSegmentRepository.saveAll(
+                newSegments
+        );
+
+        transportSegmentRepository.flush();
+    }
+
+    private boolean hasCoordinates(
+            TripPlanItemResponse item
+    ) {
+        return item.latitude() != null
+                && item.longitude() != null;
+    }
+
+    private double roadDistanceFactor(
+            SegmentTransportMode mode
+    ) {
+        return switch (mode) {
+            case WALK -> 1.10;
+            case RENTAL_CAR, OWN_CAR, TAXI, PUBLIC_TRANSIT -> 1.25;
+            case AIR, KTX, SRT, EXPRESS_BUS -> 1.0;
+        };
+    }
+
+    private double averageSpeedKmh(
+            SegmentTransportMode mode
+    ) {
+        return switch (mode) {
+            case WALK -> 4.5;
+            case PUBLIC_TRANSIT -> 30.0;
+            case RENTAL_CAR, OWN_CAR, TAXI -> 45.0;
+            case KTX, SRT -> 180.0;
+            case EXPRESS_BUS -> 70.0;
+            case AIR -> 500.0;
+        };
+    }
+
+    private long mockTransportCost(
+            SegmentTransportMode mode,
+            double distanceKm
+    ) {
+        if (
+                mode != SegmentTransportMode.RENTAL_CAR
+                        && mode != SegmentTransportMode.OWN_CAR
+        ) {
+            return 0L;
+        }
+
+        /*
+         * MVP 목업 유류비
+         * - 평균 연비: 10 km/L
+         * - 유가: 1,700원/L
+         * 실제 렌터카/유가 API 연동 시 교체한다.
+         */
+        double liters =
+                distanceKm / 10.0;
+
+        return Math.round(
+                liters * 1_700.0
+        );
+    }
+
+    private double haversineKm(
+            double lat1,
+            double lon1,
+            double lat2,
+            double lon2
+    ) {
+        final double earthRadiusKm =
+                6371.0088;
+
+        double dLat =
+                Math.toRadians(lat2 - lat1);
+
+        double dLon =
+                Math.toRadians(lon2 - lon1);
+
+        double a =
+                Math.sin(dLat / 2.0)
+                        * Math.sin(dLat / 2.0)
+                        + Math.cos(Math.toRadians(lat1))
+                        * Math.cos(Math.toRadians(lat2))
+                        * Math.sin(dLon / 2.0)
+                        * Math.sin(dLon / 2.0);
+
+        double c =
+                2.0
+                        * Math.atan2(
+                        Math.sqrt(a),
+                        Math.sqrt(1.0 - a)
+                );
+
+        return earthRadiusKm * c;
+    }
+
+    private double roundOneDecimal(
+            double value
+    ) {
+        return Math.round(value * 10.0) / 10.0;
     }
 
     private List<TripPlanDayResponse> assembleDays(

@@ -1,5 +1,6 @@
 package com.travel.trip.entity;
 
+import com.travel.trip.plan.entity.TripPlanItem;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -49,9 +50,18 @@ public class TripDay {
             cascade = CascadeType.ALL,
             orphanRemoval = true
     )
+    @OrderBy("itemOrder ASC")
+    private List<TripPlanItem> planItems =
+            new ArrayList<>();
+
+    @OneToMany(
+            mappedBy = "tripDay",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true
+    )
     @OrderBy("sequence ASC")
-    private List<TransportSegment> transportSegments
-            = new ArrayList<>();
+    private List<TransportSegment> transportSegments =
+            new ArrayList<>();
 
     @Builder
     public TripDay(
@@ -64,6 +74,16 @@ public class TripDay {
         this.date = date;
     }
 
+    public void addPlanItem(
+            TripPlanItem item
+    ) {
+        this.planItems.add(item);
+    }
+
+    public void clearPlanItems() {
+        this.planItems.clear();
+    }
+
     public void addTransportSegment(
             TransportSegment segment
     ) {
@@ -74,5 +94,9 @@ public class TripDay {
             TransportSegment segment
     ) {
         this.transportSegments.remove(segment);
+    }
+
+    public void clearTransportSegments() {
+        this.transportSegments.clear();
     }
 }

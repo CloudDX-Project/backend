@@ -1,5 +1,7 @@
 package com.travel.trip.entity;
 
+import com.travel.flight.dto.FlightCandidate;
+import com.travel.flight.type.FlightDirection;
 import com.travel.user.entity.User;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -80,17 +82,6 @@ public class Trip {
     @Column(nullable = false, length = 20)
     private TripPace pace;
 
-    /*
-     * 여행 테마
-     *
-     * NATURE
-     * SIGHTSEEING
-     * FOOD
-     * CAFE
-     * HISTORY
-     * ACTIVITY
-     * HEALING
-     */
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(
             name = "trip_preferences",
@@ -105,17 +96,6 @@ public class Trip {
     private Set<TripPreference> preferences =
             new HashSet<>();
 
-    /*
-     * 음식 취향
-     *
-     * KOREAN
-     * JAPANESE
-     * WESTERN
-     * CHINESE
-     * ASIAN
-     * SNACK
-     * CAFE
-     */
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(
             name = "trip_food_preferences",
@@ -129,6 +109,30 @@ public class Trip {
     )
     private Set<FoodPreference> foodPreferences =
             new HashSet<>();
+
+    /*
+     * 메인 화면에서 사용자가 직접 선택한 숙소의 스냅샷.
+     * accommodation_enrichment는 수집기가 관리하므로
+     * Trip 생성 시점의 선택 결과를 별도 테이블에 보존한다.
+     */
+    @OneToOne(
+            mappedBy = "trip",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true,
+            fetch = FetchType.LAZY
+    )
+    private TripAccommodationSelection selectedAccommodation;
+
+    /*
+     * AIR 여행이면 OUTBOUND / RETURN 두 행을 보존한다.
+     */
+    @OneToMany(
+            mappedBy = "trip",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true
+    )
+    private List<TripFlight> flights =
+            new ArrayList<>();
 
     @OneToMany(
             mappedBy = "trip",
@@ -148,77 +152,82 @@ public class Trip {
     @Builder
     public Trip(
             User user,
-
             String departure,
             Double departureLatitude,
             Double departureLongitude,
-
             String destination,
             Double destinationLatitude,
             Double destinationLongitude,
-
             LocalDate startDate,
             LocalTime startTime,
-
             LocalDate endDate,
             LocalTime endTime,
-
             int peopleCount,
-
             MainTransportMode mainTransportMode,
             LocalTransportMode localTransportMode,
-
             Long budget,
             Long mealBudgetPerPersonPerDay,
-
             TripPace pace,
-
             Set<TripPreference> preferences,
             Set<FoodPreference> foodPreferences
     ) {
         this.user = user;
-
         this.departure = departure;
-        this.departureLatitude =
-                departureLatitude;
-        this.departureLongitude =
-                departureLongitude;
-
+        this.departureLatitude = departureLatitude;
+        this.departureLongitude = departureLongitude;
         this.destination = destination;
-        this.destinationLatitude =
-                destinationLatitude;
-        this.destinationLongitude =
-                destinationLongitude;
-
+        this.destinationLatitude = destinationLatitude;
+        this.destinationLongitude = destinationLongitude;
         this.startDate = startDate;
         this.startTime = startTime;
-
         this.endDate = endDate;
         this.endTime = endTime;
-
         this.peopleCount = peopleCount;
-
-        this.mainTransportMode =
-                mainTransportMode;
-        this.localTransportMode =
-                localTransportMode;
-
+        this.mainTransportMode = mainTransportMode;
+        this.localTransportMode = localTransportMode;
         this.budget = budget;
-
-        this.mealBudgetPerPersonPerDay =
-                mealBudgetPerPersonPerDay;
-
+        this.mealBudgetPerPersonPerDay = mealBudgetPerPersonPerDay;
         this.pace = pace;
+        this.preferences = preferences == null
+                ? new HashSet<>()
+                : new HashSet<>(preferences);
+        this.foodPreferences = foodPreferences == null
+                ? new HashSet<>()
+                : new HashSet<>(foodPreferences);
+    }
 
-        this.preferences =
-                preferences == null
-                        ? new HashSet<>()
-                        : new HashSet<>(preferences);
+    public void selectAccommodation(
+            TripAccommodationSelection accommodation
+    ) {
+        this.selectedAccommodation = accommodation;
+    }
 
-        this.foodPreferences =
-                foodPreferences == null
-                        ? new HashSet<>()
-                        : new HashSet<>(foodPreferences);
+    public void addFlight(
+            TripFlight flight
+    ) {
+        this.flights.add(flight);
+    }
+
+    public FlightCandidate getOutboundFlightCandidate() {
+        return flights.stream()
+                .filter(
+                        flight -> flight.getDirection()
+                                == FlightDirection.OUTBOUND
+                )
+                .findFirst()
+                .map(TripFlight::toCandidate)
+                .orElse(null);
+    }
+
+    public FlightCandidate getReturnFlightCandidate() {
+        return flights.stream()
+                .filter(
+                        flight -> flight.getDirection()
+                                == FlightDirection.RETURN
+                )
+                .findFirst()
+                .map(TripFlight::toCandidate)
+                .orElse(null);
     }
 
     public void addTripDay(
@@ -229,7 +238,6 @@ public class Trip {
 
     @PrePersist
     public void prePersist() {
-
         LocalDateTime now =
                 LocalDateTime.now();
 
@@ -239,7 +247,6 @@ public class Trip {
 
     @PreUpdate
     public void preUpdate() {
-
         this.updatedAt =
                 LocalDateTime.now();
     }

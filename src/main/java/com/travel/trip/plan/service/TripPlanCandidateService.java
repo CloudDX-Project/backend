@@ -1,11 +1,10 @@
 package com.travel.trip.plan.service;
 
-import com.travel.accommodation.data.AccommodationEnrichmentData;
-import com.travel.accommodation.repository.AccommodationEnrichmentRepository;
 import com.travel.global.exception.BusinessException;
 import com.travel.global.exception.ErrorCode;
 import com.travel.trip.entity.FoodPreference;
 import com.travel.trip.entity.Trip;
+import com.travel.trip.entity.TripAccommodationSelection;
 import com.travel.trip.entity.TripPreference;
 import com.travel.trip.plan.dto.TripPlanCandidatePool;
 import com.travel.trip.plan.dto.TripPlanSelectedAccommodation;
@@ -22,36 +21,23 @@ import java.util.Set;
 @Service
 public class TripPlanCandidateService {
 
-    private static final String ACCOMMODATION_PROVIDER =
-            "NAVER_HOTEL";
-
-    private final AccommodationEnrichmentRepository accommodationEnrichmentRepository;
     private final WeatherService weatherService;
     private final TripPlanDomainCandidateCacheService domainCandidateCacheService;
 
     public TripPlanCandidateService(
-            AccommodationEnrichmentRepository accommodationEnrichmentRepository,
             WeatherService weatherService,
             TripPlanDomainCandidateCacheService domainCandidateCacheService
     ) {
-        this.accommodationEnrichmentRepository =
-                accommodationEnrichmentRepository;
-        this.weatherService =
-                weatherService;
-        this.domainCandidateCacheService =
-                domainCandidateCacheService;
+        this.weatherService = weatherService;
+        this.domainCandidateCacheService = domainCandidateCacheService;
     }
 
     public TripPlanCandidatePool buildCandidatePool(
             Long userId,
-            Trip trip,
-            Long accommodationId
+            Trip trip
     ) {
-
         TripPlanSelectedAccommodation accommodation =
-                resolveSelectedAccommodation(
-                        accommodationId
-                );
+                resolveSelectedAccommodation(trip);
 
         List<DailyWeatherResponse> weather =
                 weatherService.getTripWeather(
@@ -60,9 +46,7 @@ public class TripPlanCandidateService {
                 );
 
         WeatherCondition planningWeather =
-                resolvePlanningWeather(
-                        weather
-                );
+                resolvePlanningWeather(weather);
 
         /*
          * 현재 DB에는 TripPreference.CAFE가 남아 있지만
@@ -132,7 +116,6 @@ public class TripPlanCandidateService {
                                 FoodPreference.CAFE
                         )
         ) {
-
             cafes =
                     domainCandidateCacheService
                             .getCafeCandidates(
@@ -141,11 +124,8 @@ public class TripPlanCandidateService {
                                     accommodation.longitude(),
                                     commonPreferences
                             );
-
         } else {
-
-            cafes =
-                    List.of();
+            cafes = List.of();
         }
 
         return new TripPlanCandidatePool(
@@ -157,44 +137,36 @@ public class TripPlanCandidateService {
         );
     }
 
-    private TripPlanSelectedAccommodation
-    resolveSelectedAccommodation(
-            Long accommodationId
+    private TripPlanSelectedAccommodation resolveSelectedAccommodation(
+            Trip trip
     ) {
+        TripAccommodationSelection accommodation =
+                trip.getSelectedAccommodation();
 
-        AccommodationEnrichmentData data =
-                accommodationEnrichmentRepository
-                        .findByAccommodationIdAndProvider(
-                                accommodationId,
-                                ACCOMMODATION_PROVIDER
-                        )
-                        .orElseThrow(
-                                () ->
-                                        new BusinessException(
-                                                ErrorCode.TRIP_PLAN_ACCOMMODATION_NOT_FOUND
-                                        )
-                        );
+        if (accommodation == null) {
+            throw new BusinessException(
+                    ErrorCode.TRIP_PLAN_ACCOMMODATION_NOT_FOUND
+            );
+        }
 
         if (
-                data.providerLatitude() == null
-                        ||
-                        data.providerLongitude() == null
+                accommodation.getLatitude() == null
+                        || accommodation.getLongitude() == null
         ) {
-
             throw new BusinessException(
                     ErrorCode.TRIP_PLAN_ACCOMMODATION_COORDINATES_MISSING
             );
         }
 
         return new TripPlanSelectedAccommodation(
-                data.accommodationId(),
-                data.providerId(),
-                data.providerName(),
-                data.providerAddress(),
-                data.providerLatitude(),
-                data.providerLongitude(),
-                data.checkInTime(),
-                data.checkOutTime()
+                accommodation.getAccommodationId(),
+                accommodation.getProviderId(),
+                accommodation.getName(),
+                accommodation.getAddress(),
+                accommodation.getLatitude(),
+                accommodation.getLongitude(),
+                accommodation.getCheckInTime(),
+                accommodation.getCheckOutTime()
         );
     }
 
@@ -202,8 +174,7 @@ public class TripPlanCandidateService {
             Trip trip,
             TripPlanSelectedAccommodation accommodation
     ) {
-
-        return "v1:trip:"
+        return "v2:trip:"
                 + trip.getId()
                 + ":updated:"
                 + trip.getUpdatedAt()
@@ -211,17 +182,9 @@ public class TripPlanCandidateService {
                 + accommodation.accommodationId();
     }
 
-    /*
-     * AttractionRecommendationService는 현재 하루 단위 날씨가 아니라
-     * 하나의 WeatherCondition을 받는다.
-     *
-     * 후보군 생성 단계에서는 여행 전체 중 가장 영향이 큰 날씨를 하나 고르고,
-     * 최종 Planner에는 일자별 weather 전체를 다시 전달한다.
-     */
     private WeatherCondition resolvePlanningWeather(
             List<DailyWeatherResponse> weather
     ) {
-
         if (weather == null || weather.isEmpty()) {
             return WeatherCondition.UNKNOWN;
         }

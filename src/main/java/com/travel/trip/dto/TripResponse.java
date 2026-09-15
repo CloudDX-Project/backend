@@ -1,5 +1,6 @@
 package com.travel.trip.dto;
 
+import com.travel.flight.dto.FlightCandidate;
 import com.travel.trip.entity.*;
 
 import java.time.LocalDate;
@@ -39,6 +40,12 @@ public record TripResponse(
 
         Set<FoodPreference> foodPreferences,
 
+        TripSelectedAccommodationResponse selectedAccommodation,
+
+        FlightCandidate outboundFlight,
+
+        FlightCandidate returnFlight,
+
         List<TripDayResponse> days
 
 ) {
@@ -46,48 +53,34 @@ public record TripResponse(
     public static TripResponse from(
             Trip trip
     ) {
-
         return new TripResponse(
-
                 trip.getId(),
-
                 trip.getDeparture(),
                 trip.getDepartureLatitude(),
                 trip.getDepartureLongitude(),
-
                 trip.getDestination(),
                 trip.getDestinationLatitude(),
                 trip.getDestinationLongitude(),
-
                 trip.getStartDate(),
                 trip.getStartTime(),
-
                 trip.getEndDate(),
                 trip.getEndTime(),
-
                 trip.getPeopleCount(),
-
                 trip.getMainTransportMode(),
                 trip.getLocalTransportMode(),
-
                 trip.getBudget(),
                 trip.getMealBudgetPerPersonPerDay(),
-
                 trip.getPace(),
-
-                Set.copyOf(
-                        trip.getPreferences()
+                Set.copyOf(trip.getPreferences()),
+                Set.copyOf(trip.getFoodPreferences()),
+                TripSelectedAccommodationResponse.from(
+                        trip.getSelectedAccommodation()
                 ),
-
-                Set.copyOf(
-                        trip.getFoodPreferences()
-                ),
-
+                trip.getOutboundFlightCandidate(),
+                trip.getReturnFlightCandidate(),
                 trip.getTripDays()
                         .stream()
-                        .map(
-                                TripDayResponse::from
-                        )
+                        .map(TripDayResponse::from)
                         .toList()
         );
     }

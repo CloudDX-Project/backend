@@ -1,5 +1,6 @@
 package com.travel.trip.dto;
 
+import com.travel.flight.dto.FlightCandidate;
 import com.travel.trip.entity.FoodPreference;
 import com.travel.trip.entity.LocalTransportMode;
 import com.travel.trip.entity.MainTransportMode;
@@ -114,10 +115,6 @@ public record TripCreateRequest(
         @NotNull(message = "여행 속도는 필수입니다.")
         TripPace pace,
 
-        /*
-         * 여행 테마
-         * 최소 1개 / 최대 3개
-         */
         @NotEmpty(
                 message = "여행 테마는 1개 이상 선택해야 합니다."
         )
@@ -127,15 +124,26 @@ public record TripCreateRequest(
         )
         Set<TripPreference> preferences,
 
-        /*
-         * 음식 취향
-         * 선택하지 않아도 됨 / 최대 3개
-         */
         @Size(
                 max = 3,
                 message = "음식 취향은 최대 3개까지 선택할 수 있습니다."
         )
-        Set<FoodPreference> foodPreferences
+        Set<FoodPreference> foodPreferences,
+
+        /*
+         * 메인 화면에서 사용자가 직접 선택한 숙소.
+         */
+        @NotNull(message = "선택 숙소 ID는 필수입니다.")
+        Long accommodationId,
+
+        /*
+         * AIR 여행이면 필수.
+         * /api/flights/search에서 사용자가 고른 가는 편/오는 편을
+         * Trip 생성 시점에 함께 저장한다.
+         */
+        FlightCandidate outboundFlight,
+
+        FlightCandidate returnFlight
 
 ) {
 }
