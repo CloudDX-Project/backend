@@ -60,7 +60,11 @@ public class SecurityConfig {
                 )
 
                 .authorizeHttpRequests(auth -> auth
-
+                        .requestMatchers(
+                                "/actuator/health",
+                                "/actuator/health/**"
+                        )
+                        .permitAll()
                         // 인증 없이 접근 가능
                         .requestMatchers(
                                 "/health",
@@ -96,7 +100,8 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(
                 List.of(
                         "http://localhost:5173",
-                        "http://127.0.0.1:5173"
+                        "http://127.0.0.1:5173",
+                        "https://d1zjdn0y1wdw56.cloudfront.net/"
                 )
         );
 

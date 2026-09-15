@@ -67,3 +67,16 @@ external:
       tourist-lodging:
         path: /1741000/tourist_accommodations/info
         service-key: ${TOURIST_LODGING_API_KEY:}
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+  endpoint:
+    health:
+      show-details: never

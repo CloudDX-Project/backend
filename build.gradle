@@ -51,6 +51,7 @@ dependencies {
     implementation 'software.amazon.awssdk:auth'
     //test
     testRuntimeOnly 'com.h2database:h2'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
 }
 
 tasks.named('test') {

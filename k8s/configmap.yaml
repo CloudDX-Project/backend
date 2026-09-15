@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: travel-backend-config
+  namespace: travel
+data:
+  REDIS_HOST: "ai-travel-redis.0uh0f2.0001.apn2.cache.amazonaws.com"
+  REDIS_PORT: "6379"
