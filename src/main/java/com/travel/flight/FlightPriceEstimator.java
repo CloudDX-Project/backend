@@ -71,14 +71,14 @@ public class FlightPriceEstimator {
                 date.getDayOfWeek();
 
 
-        if (
-                dayOfWeek == DayOfWeek.FRIDAY
-                        || dayOfWeek == DayOfWeek.SATURDAY
-                        || dayOfWeek == DayOfWeek.SUNDAY
-        ) {
+if (
+        DayOfWeek.FRIDAY.equals(dayOfWeek)
+                || DayOfWeek.SATURDAY.equals(dayOfWeek)
+                || DayOfWeek.SUNDAY.equals(dayOfWeek)
+) {
 
-            multiplier *= 1.15;
-        }
+    multiplier *= 1.15;
+}
 
 
         int estimatedPrice =
