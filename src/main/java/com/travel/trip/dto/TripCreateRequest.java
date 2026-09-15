@@ -6,7 +6,16 @@ import com.travel.trip.entity.LocalTransportMode;
 import com.travel.trip.entity.MainTransportMode;
 import com.travel.trip.entity.TripPace;
 import com.travel.trip.entity.TripPreference;
-import jakarta.validation.constraints.*;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.FutureOrPresent;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -138,12 +147,16 @@ public record TripCreateRequest(
 
         /*
          * AIR 여행이면 필수.
-         * /api/flights/search에서 사용자가 고른 가는 편/오는 편을
-         * Trip 생성 시점에 함께 저장한다.
          */
         FlightCandidate outboundFlight,
 
-        FlightCandidate returnFlight
+        FlightCandidate returnFlight,
+
+        /*
+         * RENTAL_CAR 이용 시 필수.
+         */
+        @Valid
+        RentalCandidate rental
 
 ) {
 }

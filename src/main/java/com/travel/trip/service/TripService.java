@@ -9,11 +9,13 @@ import com.travel.global.exception.BusinessException;
 import com.travel.global.exception.ErrorCode;
 import com.travel.trip.dto.TripCreateRequest;
 import com.travel.trip.dto.TripResponse;
+import com.travel.trip.entity.LocalTransportMode;
 import com.travel.trip.entity.MainTransportMode;
 import com.travel.trip.entity.Trip;
 import com.travel.trip.entity.TripAccommodationSelection;
 import com.travel.trip.entity.TripDay;
 import com.travel.trip.entity.TripFlight;
+import com.travel.trip.entity.TripRentalSelection;
 import com.travel.trip.repository.TripRepository;
 import com.travel.user.entity.User;
 import com.travel.user.repository.UserRepository;
@@ -35,20 +37,30 @@ public class TripService {
             "NAVER_HOTEL";
 
     private final TripRepository tripRepository;
+
     private final UserRepository userRepository;
-    private final AccommodationEnrichmentRepository accommodationEnrichmentRepository;
+
+    private final AccommodationEnrichmentRepository
+            accommodationEnrichmentRepository;
+
     private final AirportMapper airportMapper;
 
     private void createTripDays(
             Trip trip
     ) {
+
         long totalDays =
                 ChronoUnit.DAYS.between(
                         trip.getStartDate(),
                         trip.getEndDate()
                 ) + 1;
 
-        for (int i = 0; i < totalDays; i++) {
+        for (
+                int i = 0;
+                i < totalDays;
+                i++
+        ) {
+
             LocalDate date =
                     trip.getStartDate()
                             .plusDays(i);
@@ -60,19 +72,23 @@ public class TripService {
                             .date(date)
                             .build();
 
-            trip.addTripDay(tripDay);
+            trip.addTripDay(
+                    tripDay
+            );
         }
     }
 
     private void validateTripPeriod(
             TripCreateRequest request
     ) {
+
         if (
                 request.endDate()
                         .isBefore(
                                 request.startDate()
                         )
         ) {
+
             throw new BusinessException(
                     ErrorCode.INVALID_TRIP_PERIOD
             );
@@ -89,6 +105,7 @@ public class TripService {
                                         request.startTime()
                                 )
         ) {
+
             throw new BusinessException(
                     ErrorCode.INVALID_TRIP_TIME
             );
@@ -98,6 +115,7 @@ public class TripService {
     private AccommodationEnrichmentData resolveAccommodation(
             Long accommodationId
     ) {
+
         AccommodationEnrichmentData accommodation =
                 accommodationEnrichmentRepository
                         .findByAccommodationIdAndProvider(
@@ -105,15 +123,18 @@ public class TripService {
                                 ACCOMMODATION_PROVIDER
                         )
                         .orElseThrow(
-                                () -> new BusinessException(
-                                        ErrorCode.TRIP_PLAN_ACCOMMODATION_NOT_FOUND
-                                )
+                                () ->
+                                        new BusinessException(
+                                                ErrorCode.TRIP_PLAN_ACCOMMODATION_NOT_FOUND
+                                        )
                         );
 
         if (
                 accommodation.providerLatitude() == null
-                        || accommodation.providerLongitude() == null
+                        ||
+                        accommodation.providerLongitude() == null
         ) {
+
             throw new BusinessException(
                     ErrorCode.TRIP_PLAN_ACCOMMODATION_COORDINATES_MISSING
             );
@@ -125,6 +146,7 @@ public class TripService {
     private void validateSelectedFlights(
             TripCreateRequest request
     ) {
+
         if (
                 request.mainTransportMode()
                         != MainTransportMode.AIR
@@ -138,7 +160,12 @@ public class TripService {
         FlightCandidate returning =
                 request.returnFlight();
 
-        if (outbound == null || returning == null) {
+        if (
+                outbound == null
+                        ||
+                        returning == null
+        ) {
+
             throw new BusinessException(
                     ErrorCode.TRIP_PLAN_FLIGHT_SELECTION_REQUIRED
             );
@@ -146,10 +173,14 @@ public class TripService {
 
         if (
                 outbound.departureTime() == null
-                        || outbound.arrivalTime() == null
-                        || returning.departureTime() == null
-                        || returning.arrivalTime() == null
+                        ||
+                        outbound.arrivalTime() == null
+                        ||
+                        returning.departureTime() == null
+                        ||
+                        returning.arrivalTime() == null
         ) {
+
             throw new BusinessException(
                     ErrorCode.TRIP_PLAN_INVALID_FLIGHT_SELECTION
             );
@@ -166,21 +197,26 @@ public class TripService {
                 );
 
         boolean outboundValid =
+
                 outbound.direction()
                         == FlightDirection.OUTBOUND
+
                         && equalsAirport(
                         departureAirport,
                         outbound.departureAirport()
                 )
+
                         && equalsAirport(
                         destinationAirport,
                         outbound.arrivalAirport()
                 )
+
                         && outbound.departureTime()
                         .toLocalDate()
                         .equals(
                                 request.startDate()
                         )
+
                         && !outbound.departureTime()
                         .isBefore(
                                 LocalDateTime.of(
@@ -188,31 +224,38 @@ public class TripService {
                                         request.startTime()
                                 )
                         )
+
                         && outbound.arrivalTime()
                         .isAfter(
                                 outbound.departureTime()
                         );
 
         boolean returnValid =
+
                 returning.direction()
                         == FlightDirection.RETURN
+
                         && equalsAirport(
                         destinationAirport,
                         returning.departureAirport()
                 )
+
                         && equalsAirport(
                         departureAirport,
                         returning.arrivalAirport()
                 )
+
                         && returning.departureTime()
                         .toLocalDate()
                         .equals(
                                 request.endDate()
                         )
+
                         && returning.arrivalTime()
                         .isAfter(
                                 returning.departureTime()
                         )
+
                         && !returning.arrivalTime()
                         .isAfter(
                                 LocalDateTime.of(
@@ -222,6 +265,7 @@ public class TripService {
                         );
 
         boolean chronological =
+
                 returning.departureTime()
                         .isAfter(
                                 outbound.arrivalTime()
@@ -229,11 +273,52 @@ public class TripService {
 
         if (
                 !outboundValid
-                        || !returnValid
-                        || !chronological
+                        ||
+                        !returnValid
+                        ||
+                        !chronological
         ) {
+
             throw new BusinessException(
                     ErrorCode.TRIP_PLAN_INVALID_FLIGHT_SELECTION
+            );
+        }
+    }
+
+    private void validateSelectedRental(
+            TripCreateRequest request
+    ) {
+
+        if (
+                request.localTransportMode()
+                        != LocalTransportMode.RENTAL_CAR
+        ) {
+            return;
+        }
+
+        if (
+                request.rental() == null
+        ) {
+
+            throw new BusinessException(
+                    ErrorCode.TRIP_PLAN_RENTAL_SELECTION_REQUIRED
+            );
+        }
+
+        if (
+                request.rental().latitude() == null
+                        ||
+                        request.rental().longitude() == null
+                        ||
+                        request.rental()
+                                .estimatedShuttleMinutes() == null
+                        ||
+                        request.rental()
+                                .estimatedShuttleMinutes() <= 0
+        ) {
+
+            throw new BusinessException(
+                    ErrorCode.TRIP_PLAN_INVALID_RENTAL_SELECTION
             );
         }
     }
@@ -242,42 +327,59 @@ public class TripService {
             String expected,
             String actual
     ) {
+
         return expected != null
-                && actual != null
-                && expected.equalsIgnoreCase(actual);
+                &&
+                actual != null
+                &&
+                expected.equalsIgnoreCase(
+                        actual
+                );
     }
 
     private void attachAccommodation(
             Trip trip,
             AccommodationEnrichmentData data
     ) {
-        TripAccommodationSelection selectedAccommodation =
+
+        TripAccommodationSelection
+                selectedAccommodation =
+
                 TripAccommodationSelection.builder()
                         .trip(trip)
+
                         .accommodationId(
                                 data.accommodationId()
                         )
+
                         .providerId(
                                 data.providerId()
                         )
+
                         .name(
                                 data.providerName()
                         )
+
                         .address(
                                 data.providerAddress()
                         )
+
                         .latitude(
                                 data.providerLatitude()
                         )
+
                         .longitude(
                                 data.providerLongitude()
                         )
+
                         .checkInTime(
                                 data.checkInTime()
                         )
+
                         .checkOutTime(
                                 data.checkOutTime()
                         )
+
                         .build();
 
         trip.selectAccommodation(
@@ -289,6 +391,7 @@ public class TripService {
             Trip trip,
             TripCreateRequest request
     ) {
+
         if (
                 request.mainTransportMode()
                         != MainTransportMode.AIR
@@ -311,16 +414,49 @@ public class TripService {
         );
     }
 
+    private void attachRental(
+            Trip trip,
+            TripCreateRequest request
+    ) {
+
+        if (
+                request.localTransportMode()
+                        != LocalTransportMode.RENTAL_CAR
+        ) {
+            return;
+        }
+
+        trip.selectRental(
+                TripRentalSelection.from(
+                        trip,
+                        request.rental()
+                )
+        );
+    }
+
     @Transactional
     public TripResponse createTrip(
             Long userId,
             TripCreateRequest request
     ) {
-        validateTripPeriod(request);
-        validateSelectedFlights(request);
+
+        validateTripPeriod(
+                request
+        );
+
+        validateSelectedFlights(
+                request
+        );
+
+        validateSelectedRental(
+                request
+        );
 
         User user =
-                userRepository.findById(userId)
+                userRepository
+                        .findById(
+                                userId
+                        )
                         .orElseThrow(
                                 () ->
                                         new BusinessException(
@@ -335,61 +471,83 @@ public class TripService {
 
         Trip trip =
                 Trip.builder()
-                        .user(user)
+
+                        .user(
+                                user
+                        )
+
                         .departure(
                                 request.departure()
                         )
+
                         .departureLatitude(
                                 request.departureLatitude()
                         )
+
                         .departureLongitude(
                                 request.departureLongitude()
                         )
+
                         .destination(
                                 request.destination()
                         )
+
                         .destinationLatitude(
                                 request.destinationLatitude()
                         )
+
                         .destinationLongitude(
                                 request.destinationLongitude()
                         )
+
                         .startDate(
                                 request.startDate()
                         )
+
                         .startTime(
                                 request.startTime()
                         )
+
                         .endDate(
                                 request.endDate()
                         )
+
                         .endTime(
                                 request.endTime()
                         )
+
                         .peopleCount(
                                 request.peopleCount()
                         )
+
                         .mainTransportMode(
                                 request.mainTransportMode()
                         )
+
                         .localTransportMode(
                                 request.localTransportMode()
                         )
+
                         .budget(
                                 request.budget()
                         )
+
                         .mealBudgetPerPersonPerDay(
                                 request.mealBudgetPerPersonPerDay()
                         )
+
                         .pace(
                                 request.pace()
                         )
+
                         .preferences(
                                 request.preferences()
                         )
+
                         .foodPreferences(
                                 request.foodPreferences()
                         )
+
                         .build();
 
         attachAccommodation(
@@ -402,10 +560,19 @@ public class TripService {
                 request
         );
 
-        createTripDays(trip);
+        attachRental(
+                trip,
+                request
+        );
+
+        createTripDays(
+                trip
+        );
 
         Trip savedTrip =
-                tripRepository.save(trip);
+                tripRepository.save(
+                        trip
+                );
 
         return TripResponse.from(
                 savedTrip
@@ -416,8 +583,12 @@ public class TripService {
             Long userId,
             Long tripId
     ) {
+
         Trip trip =
-                tripRepository.findById(tripId)
+                tripRepository
+                        .findById(
+                                tripId
+                        )
                         .orElseThrow(
                                 () ->
                                         new BusinessException(
@@ -428,8 +599,11 @@ public class TripService {
         if (
                 !trip.getUser()
                         .getId()
-                        .equals(userId)
+                        .equals(
+                                userId
+                        )
         ) {
+
             throw new BusinessException(
                     ErrorCode.TRIP_NOT_FOUND
             );
@@ -443,10 +617,15 @@ public class TripService {
     public List<TripResponse> getMyTrips(
             Long userId
     ) {
+
         return tripRepository
-                .findAllByUserId(userId)
+                .findAllByUserId(
+                        userId
+                )
                 .stream()
-                .map(TripResponse::from)
+                .map(
+                        TripResponse::from
+                )
                 .toList();
     }
 }

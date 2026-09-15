@@ -70,6 +70,15 @@ public enum ErrorCode {
             HttpStatus.BAD_REQUEST,
             "선택한 항공편이 여행 정보와 일치하지 않습니다."
     ),
+    TRIP_PLAN_RENTAL_SELECTION_REQUIRED(
+            HttpStatus.BAD_REQUEST,
+            "렌터카 이용 여행은 렌터카 선택이 필요합니다."
+    ),
+
+    TRIP_PLAN_INVALID_RENTAL_SELECTION(
+            HttpStatus.BAD_REQUEST,
+            "선택한 렌터카 위치 또는 셔틀 소요시간 정보가 올바르지 않습니다."
+    ),
 
     INVALID_TRIP_PERIOD(
             HttpStatus.BAD_REQUEST,

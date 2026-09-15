@@ -3,7 +3,25 @@ package com.travel.trip.entity;
 import com.travel.flight.dto.FlightCandidate;
 import com.travel.flight.type.FlightDirection;
 import com.travel.user.entity.User;
-import jakarta.persistence.*;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.OrderBy;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -28,10 +46,16 @@ public class Trip {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(
+            name = "user_id",
+            nullable = false
+    )
     private User user;
 
-    @Column(nullable = false, length = 100)
+    @Column(
+            nullable = false,
+            length = 100
+    )
     private String departure;
 
     @Column(nullable = false)
@@ -40,7 +64,10 @@ public class Trip {
     @Column(nullable = false)
     private Double departureLongitude;
 
-    @Column(nullable = false, length = 100)
+    @Column(
+            nullable = false,
+            length = 100
+    )
     private String destination;
 
     @Column(nullable = false)
@@ -65,11 +92,17 @@ public class Trip {
     private int peopleCount;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
+    @Column(
+            nullable = false,
+            length = 30
+    )
     private MainTransportMode mainTransportMode;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
+    @Column(
+            nullable = false,
+            length = 30
+    )
     private LocalTransportMode localTransportMode;
 
     @Column(nullable = false)
@@ -79,7 +112,10 @@ public class Trip {
     private Long mealBudgetPerPersonPerDay;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(
+            nullable = false,
+            length = 30
+    )
     private TripPace pace;
 
     @ElementCollection(fetch = FetchType.LAZY)
@@ -111,9 +147,7 @@ public class Trip {
             new HashSet<>();
 
     /*
-     * 메인 화면에서 사용자가 직접 선택한 숙소의 스냅샷.
-     * accommodation_enrichment는 수집기가 관리하므로
-     * Trip 생성 시점의 선택 결과를 별도 테이블에 보존한다.
+     * 선택 숙소.
      */
     @OneToOne(
             mappedBy = "trip",
@@ -124,7 +158,7 @@ public class Trip {
     private TripAccommodationSelection selectedAccommodation;
 
     /*
-     * AIR 여행이면 OUTBOUND / RETURN 두 행을 보존한다.
+     * 선택 항공편.
      */
     @OneToMany(
             mappedBy = "trip",
@@ -133,6 +167,17 @@ public class Trip {
     )
     private List<TripFlight> flights =
             new ArrayList<>();
+
+    /*
+     * 선택 렌터카.
+     */
+    @OneToOne(
+            mappedBy = "trip",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true,
+            fetch = FetchType.LAZY
+    )
+    private TripRentalSelection selectedRental;
 
     @OneToMany(
             mappedBy = "trip",
@@ -172,72 +217,108 @@ public class Trip {
             Set<FoodPreference> foodPreferences
     ) {
         this.user = user;
+
         this.departure = departure;
         this.departureLatitude = departureLatitude;
         this.departureLongitude = departureLongitude;
+
         this.destination = destination;
         this.destinationLatitude = destinationLatitude;
         this.destinationLongitude = destinationLongitude;
+
         this.startDate = startDate;
         this.startTime = startTime;
+
         this.endDate = endDate;
         this.endTime = endTime;
+
         this.peopleCount = peopleCount;
-        this.mainTransportMode = mainTransportMode;
-        this.localTransportMode = localTransportMode;
+
+        this.mainTransportMode =
+                mainTransportMode;
+
+        this.localTransportMode =
+                localTransportMode;
+
         this.budget = budget;
-        this.mealBudgetPerPersonPerDay = mealBudgetPerPersonPerDay;
+
+        this.mealBudgetPerPersonPerDay =
+                mealBudgetPerPersonPerDay;
+
         this.pace = pace;
-        this.preferences = preferences == null
-                ? new HashSet<>()
-                : new HashSet<>(preferences);
-        this.foodPreferences = foodPreferences == null
-                ? new HashSet<>()
-                : new HashSet<>(foodPreferences);
+
+        this.preferences =
+                preferences == null
+                        ? new HashSet<>()
+                        : new HashSet<>(preferences);
+
+        this.foodPreferences =
+                foodPreferences == null
+                        ? new HashSet<>()
+                        : new HashSet<>(foodPreferences);
     }
 
     public void selectAccommodation(
             TripAccommodationSelection accommodation
     ) {
-        this.selectedAccommodation = accommodation;
+        this.selectedAccommodation =
+                accommodation;
     }
 
     public void addFlight(
             TripFlight flight
     ) {
-        this.flights.add(flight);
+        this.flights.add(
+                flight
+        );
+    }
+
+    public void selectRental(
+            TripRentalSelection rental
+    ) {
+        this.selectedRental =
+                rental;
     }
 
     public FlightCandidate getOutboundFlightCandidate() {
         return flights.stream()
                 .filter(
-                        flight -> flight.getDirection()
-                                == FlightDirection.OUTBOUND
+                        flight ->
+                                flight.getDirection()
+                                        == FlightDirection.OUTBOUND
                 )
                 .findFirst()
-                .map(TripFlight::toCandidate)
+                .map(
+                        TripFlight::toCandidate
+                )
                 .orElse(null);
     }
 
     public FlightCandidate getReturnFlightCandidate() {
         return flights.stream()
                 .filter(
-                        flight -> flight.getDirection()
-                                == FlightDirection.RETURN
+                        flight ->
+                                flight.getDirection()
+                                        == FlightDirection.RETURN
                 )
                 .findFirst()
-                .map(TripFlight::toCandidate)
+                .map(
+                        TripFlight::toCandidate
+                )
                 .orElse(null);
     }
 
     public void addTripDay(
             TripDay tripDay
     ) {
-        this.tripDays.add(tripDay);
+        this.tripDays.add(
+                tripDay
+        );
     }
 
     @PrePersist
     public void prePersist() {
+
         LocalDateTime now =
                 LocalDateTime.now();
 
@@ -247,6 +328,7 @@ public class Trip {
 
     @PreUpdate
     public void preUpdate() {
+
         this.updatedAt =
                 LocalDateTime.now();
     }

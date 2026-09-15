@@ -1,6 +1,7 @@
 package com.travel.trip.plan.dto;
 
 import com.travel.flight.dto.FlightCandidate;
+import com.travel.trip.dto.TripSelectedRentalResponse;
 import com.travel.trip.entity.LocalTransportMode;
 import com.travel.trip.entity.MainTransportMode;
 import com.travel.weather.DailyWeatherResponse;
@@ -20,6 +21,8 @@ public record TripPlanResponse(
         LocalTransportMode localTransportMode,
 
         TripPlanSelectedAccommodation selectedAccommodation,
+
+        TripSelectedRentalResponse selectedRental,
 
         FlightCandidate outboundFlight,
 

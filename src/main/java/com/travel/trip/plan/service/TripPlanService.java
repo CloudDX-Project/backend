@@ -3,11 +3,15 @@ package com.travel.trip.plan.service;
 import com.travel.flight.dto.FlightCandidate;
 import com.travel.global.exception.BusinessException;
 import com.travel.global.exception.ErrorCode;
+import com.travel.trip.dto.TransportSegmentResponse;
+import com.travel.trip.dto.TripSelectedRentalResponse;
+import com.travel.trip.entity.LocalTransportMode;
 import com.travel.trip.entity.MainTransportMode;
 import com.travel.trip.entity.SegmentTransportMode;
 import com.travel.trip.entity.TransportSegment;
 import com.travel.trip.entity.Trip;
 import com.travel.trip.entity.TripDay;
+import com.travel.trip.entity.TripRentalSelection;
 import com.travel.trip.plan.dto.TripPlanCandidatePool;
 import com.travel.trip.plan.dto.TripPlanDayResponse;
 import com.travel.trip.plan.dto.TripPlanItemResponse;
@@ -120,18 +124,29 @@ public class TripPlanService {
                 days
         );
 
-        rebuildMockTransportSegments(
-                trip,
-                days
+        Map<Integer, List<TransportSegmentResponse>> transportSegmentsByDay =
+                rebuildEstimatedTransportSegments(
+                        trip,
+                        days,
+                        outboundFlight,
+                        returnFlight
+                );
+
+        days = attachTransportSegments(
+                days,
+                transportSegmentsByDay
         );
 
         return new TripPlanResponse(
                 trip.getId(),
                 plannerResult.planner(),
-                "AI_ESTIMATE_ROUTING_NOT_APPLIED",
+                "AI_ESTIMATE_ROUTING",
                 trip.getMainTransportMode(),
                 trip.getLocalTransportMode(),
                 candidatePool.accommodation(),
+                TripSelectedRentalResponse.from(
+                        trip.getSelectedRental()
+                ),
                 outboundFlight,
                 returnFlight,
                 candidatePool.weather(),
@@ -160,6 +175,16 @@ public class TripPlanService {
         ) {
             throw new BusinessException(
                     ErrorCode.TRIP_PLAN_FLIGHT_SELECTION_REQUIRED
+            );
+        }
+
+        if (
+                trip.getLocalTransportMode()
+                        == LocalTransportMode.RENTAL_CAR
+                        && trip.getSelectedRental() == null
+        ) {
+            throw new BusinessException(
+                    ErrorCode.TRIP_PLAN_RENTAL_SELECTION_REQUIRED
             );
         }
     }
@@ -217,9 +242,11 @@ public class TripPlanService {
         tripPlanItemRepository.flush();
     }
 
-    private void rebuildMockTransportSegments(
+    private Map<Integer, List<TransportSegmentResponse>> rebuildEstimatedTransportSegments(
             Trip trip,
-            List<TripPlanDayResponse> days
+            List<TripPlanDayResponse> days,
+            FlightCandidate outboundFlight,
+            FlightCandidate returnFlight
     ) {
         Map<Integer, TripDay> tripDayMap =
                 new HashMap<>();
@@ -236,6 +263,9 @@ public class TripPlanService {
 
         List<TransportSegment> newSegments =
                 new ArrayList<>();
+
+        TripRentalSelection rental =
+                trip.getSelectedRental();
 
         for (TripPlanDayResponse day : days) {
             TripDay tripDay =
@@ -259,6 +289,91 @@ public class TripPlanService {
                 TripPlanItemResponse current =
                         items.get(i);
 
+                /*
+                 * AIRPORT -> FLIGHT -> AIRPORT는 FLIGHT 카드 자체가 항공 이동을
+                 * 의미한다. 비행 거리는 별도 추정하지 않고 실제 선택 항공편의
+                 * 출/도착 시각만 TransportSegment로 보존한다.
+                 */
+                if (
+                        current.type() == TripPlanItemType.FLIGHT
+                                && current.transportModeFromPrevious()
+                                == SegmentTransportMode.AIR
+                ) {
+                    TripPlanItemResponse next =
+                            i + 1 < items.size()
+                                    ? items.get(i + 1)
+                                    : null;
+
+                    FlightCandidate selectedFlight =
+                            resolveFlightCandidate(
+                                    current,
+                                    outboundFlight,
+                                    returnFlight
+                            );
+
+                    if (previous.type() == TripPlanItemType.AIRPORT) {
+                        String arrivalName = null;
+                        Double arrivalLatitude = null;
+                        Double arrivalLongitude = null;
+
+                        if (
+                                next != null
+                                        && next.type() == TripPlanItemType.AIRPORT
+                        ) {
+                            arrivalName = next.name();
+                            arrivalLatitude = next.latitude();
+                            arrivalLongitude = next.longitude();
+                        } else if (selectedFlight != null) {
+                            AirportInfo arrivalAirport =
+                                    airportInfo(
+                                            selectedFlight.arrivalAirport()
+                                    );
+
+                            arrivalName = arrivalAirport.name();
+                            arrivalLatitude = arrivalAirport.latitude();
+                            arrivalLongitude = arrivalAirport.longitude();
+                        }
+
+                        if (arrivalName != null) {
+                            long durationMinutes =
+                                    flightDurationMinutes(
+                                            current.startAt(),
+                                            current.endAt()
+                                    );
+
+                            TransportSegment segment =
+                                    TransportSegment.builder()
+                                            .tripDay(tripDay)
+                                            .sequence(sequence++)
+                                            .mode(SegmentTransportMode.AIR)
+                                            .departureName(previous.name())
+                                            .arrivalName(arrivalName)
+                                            .departureLatitude(previous.latitude())
+                                            .departureLongitude(previous.longitude())
+                                            .arrivalLatitude(arrivalLatitude)
+                                            .arrivalLongitude(arrivalLongitude)
+                                            .departureAt(current.startAt())
+                                            .arrivalAt(current.endAt())
+                                            .distanceKm(null)
+                                            .durationMinutes(durationMinutes)
+                                            .cost(0L)
+                                            .build();
+
+                            tripDay.addTransportSegment(segment);
+                            newSegments.add(segment);
+                        }
+                    }
+
+                    continue;
+                }
+
+                /*
+                 * FLIGHT 다음 AIRPORT는 위 항공 세그먼트에서 이미 처리했다.
+                 */
+                if (previous.type() == TripPlanItemType.FLIGHT) {
+                    continue;
+                }
+
                 SegmentTransportMode mode =
                         current.transportModeFromPrevious();
 
@@ -266,77 +381,161 @@ public class TripPlanService {
                     continue;
                 }
 
-                if (!hasCoordinates(previous) || !hasCoordinates(current)) {
+                /*
+                 * 제주 도착 후 렌터카를 이용하는 경우:
+                 * 공항 -> 렌터카 업체는 SHUTTLE,
+                 * 렌터카 업체 -> 첫 일정은 RENTAL_CAR로 분리한다.
+                 */
+                if (
+                        mode == SegmentTransportMode.RENTAL_CAR
+                                && isArrivalAirport(previous)
+                                && rental != null
+                ) {
+                    LocalDateTime shuttleDepartureAt =
+                            previous.startAt() != null
+                                    ? previous.startAt()
+                                    : previous.endAt();
+
+                    LocalDateTime shuttleArrivalAt =
+                            shuttleDepartureAt == null
+                                    ? null
+                                    : shuttleDepartureAt.plusMinutes(
+                                    rental.getEstimatedShuttleMinutes()
+                            );
+
+                    TransportSegment shuttle =
+                            createFixedDurationSegment(
+                                    tripDay,
+                                    sequence++,
+                                    SegmentTransportMode.SHUTTLE,
+                                    previous.name(),
+                                    rental.getCompany(),
+                                    previous.latitude(),
+                                    previous.longitude(),
+                                    rental.getLatitude(),
+                                    rental.getLongitude(),
+                                    shuttleDepartureAt,
+                                    shuttleArrivalAt,
+                                    rental.getEstimatedShuttleMinutes()
+                            );
+
+                    tripDay.addTransportSegment(shuttle);
+                    newSegments.add(shuttle);
+
+                    TransportSegment localRoute =
+                            createEstimatedRouteSegment(
+                                    tripDay,
+                                    sequence,
+                                    SegmentTransportMode.RENTAL_CAR,
+                                    rental.getCompany(),
+                                    current.name(),
+                                    rental.getLatitude(),
+                                    rental.getLongitude(),
+                                    current.latitude(),
+                                    current.longitude(),
+                                    shuttleArrivalAt,
+                                    current.startAt()
+                            );
+
+                    if (localRoute != null) {
+                        sequence++;
+                        tripDay.addTransportSegment(localRoute);
+                        newSegments.add(localRoute);
+                    }
+
                     continue;
                 }
 
-                double straightDistanceKm =
-                        haversineKm(
+                /*
+                 * 마지막 일정 -> 렌터카 업체 -> 출발 공항.
+                 * 공항까지 렌터카로 직접 가는 것으로 계산하지 않는다.
+                 */
+                if (
+                        mode == SegmentTransportMode.RENTAL_CAR
+                                && isReturnDepartureAirport(current)
+                                && rental != null
+                ) {
+                    LocalDateTime routeDepartureAt =
+                            previous.endAt() != null
+                                    ? previous.endAt()
+                                    : previous.startAt();
+
+                    TransportSegment localRoute =
+                            createEstimatedRouteSegment(
+                                    tripDay,
+                                    sequence,
+                                    SegmentTransportMode.RENTAL_CAR,
+                                    previous.name(),
+                                    rental.getCompany(),
+                                    previous.latitude(),
+                                    previous.longitude(),
+                                    rental.getLatitude(),
+                                    rental.getLongitude(),
+                                    routeDepartureAt,
+                                    null
+                            );
+
+                    LocalDateTime rentalArrivalAt =
+                            localRoute == null
+                                    ? routeDepartureAt
+                                    : localRoute.getArrivalAt();
+
+                    if (localRoute != null) {
+                        sequence++;
+                        tripDay.addTransportSegment(localRoute);
+                        newSegments.add(localRoute);
+                    }
+
+                    LocalDateTime shuttleArrivalAt =
+                            rentalArrivalAt == null
+                                    ? current.startAt()
+                                    : rentalArrivalAt.plusMinutes(
+                                    rental.getEstimatedShuttleMinutes()
+                            );
+
+                    TransportSegment shuttle =
+                            createFixedDurationSegment(
+                                    tripDay,
+                                    sequence++,
+                                    SegmentTransportMode.SHUTTLE,
+                                    rental.getCompany(),
+                                    current.name(),
+                                    rental.getLatitude(),
+                                    rental.getLongitude(),
+                                    current.latitude(),
+                                    current.longitude(),
+                                    rentalArrivalAt,
+                                    shuttleArrivalAt,
+                                    rental.getEstimatedShuttleMinutes()
+                            );
+
+                    tripDay.addTransportSegment(shuttle);
+                    newSegments.add(shuttle);
+                    continue;
+                }
+
+                TransportSegment route =
+                        createEstimatedRouteSegment(
+                                tripDay,
+                                sequence,
+                                mode,
+                                previous.name(),
+                                current.name(),
                                 previous.latitude(),
                                 previous.longitude(),
                                 current.latitude(),
-                                current.longitude()
+                                current.longitude(),
+                                previous.endAt() != null
+                                        ? previous.endAt()
+                                        : previous.startAt(),
+                                current.startAt()
                         );
 
-                double distanceKm =
-                        roundOneDecimal(
-                                straightDistanceKm
-                                        * roadDistanceFactor(mode)
-                        );
-
-                long durationMinutes =
-                        Math.max(
-                                1L,
-                                Math.round(
-                                        distanceKm
-                                                / averageSpeedKmh(mode)
-                                                * 60.0
-                                )
-                        );
-
-                long cost =
-                        mockTransportCost(
-                                mode,
-                                distanceKm
-                        );
-
-                LocalDateTime departureAt =
-                        previous.endAt() != null
-                                ? previous.endAt()
-                                : previous.startAt();
-
-                LocalDateTime arrivalAt =
-                        departureAt == null
-                                ? current.startAt()
-                                : departureAt.plusMinutes(
-                                durationMinutes
-                        );
-
-                TransportSegment segment =
-                        TransportSegment.builder()
-                                .tripDay(tripDay)
-                                .sequence(sequence++)
-                                .mode(mode)
-                                .departureName(previous.name())
-                                .arrivalName(current.name())
-                                .departureLatitude(previous.latitude())
-                                .departureLongitude(previous.longitude())
-                                .arrivalLatitude(current.latitude())
-                                .arrivalLongitude(current.longitude())
-                                .departureAt(departureAt)
-                                .arrivalAt(arrivalAt)
-                                .distanceKm(distanceKm)
-                                .durationMinutes(durationMinutes)
-                                .cost(cost)
-                                .build();
-
-                tripDay.addTransportSegment(
-                        segment
-                );
-
-                newSegments.add(
-                        segment
-                );
+                if (route != null) {
+                    sequence++;
+                    tripDay.addTransportSegment(route);
+                    newSegments.add(route);
+                }
             }
         }
 
@@ -345,6 +544,237 @@ public class TripPlanService {
         );
 
         transportSegmentRepository.flush();
+
+        Map<Integer, List<TransportSegmentResponse>> result =
+                new HashMap<>();
+
+        for (TransportSegment segment : newSegments) {
+            result.computeIfAbsent(
+                            segment.getTripDay().getDayNumber(),
+                            ignored -> new ArrayList<>()
+                    )
+                    .add(
+                            TransportSegmentResponse.from(segment)
+                    );
+        }
+
+        return result;
+    }
+
+    private List<TripPlanDayResponse> attachTransportSegments(
+            List<TripPlanDayResponse> days,
+            Map<Integer, List<TransportSegmentResponse>> transportSegmentsByDay
+    ) {
+        List<TripPlanDayResponse> result =
+                new ArrayList<>();
+
+        for (TripPlanDayResponse day : days) {
+            result.add(
+                    new TripPlanDayResponse(
+                            day.dayNumber(),
+                            day.date(),
+                            day.items(),
+                            transportSegmentsByDay.getOrDefault(
+                                    day.dayNumber(),
+                                    List.of()
+                            )
+                    )
+            );
+        }
+
+        return result;
+    }
+
+    private TransportSegment createEstimatedRouteSegment(
+            TripDay tripDay,
+            int sequence,
+            SegmentTransportMode mode,
+            String departureName,
+            String arrivalName,
+            Double departureLatitude,
+            Double departureLongitude,
+            Double arrivalLatitude,
+            Double arrivalLongitude,
+            LocalDateTime departureAt,
+            LocalDateTime preferredArrivalAt
+    ) {
+        if (
+                departureLatitude == null
+                        || departureLongitude == null
+                        || arrivalLatitude == null
+                        || arrivalLongitude == null
+        ) {
+            return null;
+        }
+
+        double straightDistanceKm =
+                haversineKm(
+                        departureLatitude,
+                        departureLongitude,
+                        arrivalLatitude,
+                        arrivalLongitude
+                );
+
+        double distanceKm =
+                roundOneDecimal(
+                        straightDistanceKm
+                                * roadDistanceFactor(mode)
+                );
+
+        long durationMinutes =
+                Math.max(
+                        1L,
+                        Math.round(
+                                distanceKm
+                                        / averageSpeedKmh(mode)
+                                        * 60.0
+                        )
+                );
+
+        long cost =
+                mockTransportCost(
+                        mode,
+                        distanceKm
+                );
+
+        LocalDateTime arrivalAt =
+                departureAt == null
+                        ? preferredArrivalAt
+                        : departureAt.plusMinutes(
+                        durationMinutes
+                );
+
+        return TransportSegment.builder()
+                .tripDay(tripDay)
+                .sequence(sequence)
+                .mode(mode)
+                .departureName(departureName)
+                .arrivalName(arrivalName)
+                .departureLatitude(departureLatitude)
+                .departureLongitude(departureLongitude)
+                .arrivalLatitude(arrivalLatitude)
+                .arrivalLongitude(arrivalLongitude)
+                .departureAt(departureAt)
+                .arrivalAt(arrivalAt)
+                .distanceKm(distanceKm)
+                .durationMinutes(durationMinutes)
+                .cost(cost)
+                .build();
+    }
+
+    private TransportSegment createFixedDurationSegment(
+            TripDay tripDay,
+            int sequence,
+            SegmentTransportMode mode,
+            String departureName,
+            String arrivalName,
+            Double departureLatitude,
+            Double departureLongitude,
+            Double arrivalLatitude,
+            Double arrivalLongitude,
+            LocalDateTime departureAt,
+            LocalDateTime arrivalAt,
+            long durationMinutes
+    ) {
+        return TransportSegment.builder()
+                .tripDay(tripDay)
+                .sequence(sequence)
+                .mode(mode)
+                .departureName(departureName)
+                .arrivalName(arrivalName)
+                .departureLatitude(departureLatitude)
+                .departureLongitude(departureLongitude)
+                .arrivalLatitude(arrivalLatitude)
+                .arrivalLongitude(arrivalLongitude)
+                .departureAt(departureAt)
+                .arrivalAt(arrivalAt)
+                .distanceKm(null)
+                .durationMinutes(durationMinutes)
+                .cost(0L)
+                .build();
+    }
+
+    private FlightCandidate resolveFlightCandidate(
+            TripPlanItemResponse flightItem,
+            FlightCandidate outboundFlight,
+            FlightCandidate returnFlight
+    ) {
+        if (flightItem.referenceId() != null) {
+            if (
+                    outboundFlight != null
+                            && flightItem.referenceId().equals(
+                            outboundFlight.id()
+                    )
+            ) {
+                return outboundFlight;
+            }
+
+            if (
+                    returnFlight != null
+                            && flightItem.referenceId().equals(
+                            returnFlight.id()
+                    )
+            ) {
+                return returnFlight;
+            }
+        }
+
+        if (
+                outboundFlight != null
+                        && flightItem.startAt() != null
+                        && flightItem.startAt().equals(
+                        outboundFlight.departureTime()
+                )
+        ) {
+            return outboundFlight;
+        }
+
+        if (
+                returnFlight != null
+                        && flightItem.startAt() != null
+                        && flightItem.startAt().equals(
+                        returnFlight.departureTime()
+                )
+        ) {
+            return returnFlight;
+        }
+
+        return null;
+    }
+
+    private long flightDurationMinutes(
+            LocalDateTime departureAt,
+            LocalDateTime arrivalAt
+    ) {
+        if (departureAt == null || arrivalAt == null) {
+            return 0L;
+        }
+
+        return Math.max(
+                0L,
+                ChronoUnit.MINUTES.between(
+                        departureAt,
+                        arrivalAt
+                )
+        );
+    }
+
+    private boolean isArrivalAirport(
+            TripPlanItemResponse item
+    ) {
+        return item.type() == TripPlanItemType.AIRPORT
+                && "ARRIVAL_AIRPORT".equals(
+                item.category()
+        );
+    }
+
+    private boolean isReturnDepartureAirport(
+            TripPlanItemResponse item
+    ) {
+        return item.type() == TripPlanItemType.AIRPORT
+                && "RETURN_DEPARTURE_AIRPORT".equals(
+                item.category()
+        );
     }
 
     private boolean hasCoordinates(
@@ -359,7 +789,7 @@ public class TripPlanService {
     ) {
         return switch (mode) {
             case WALK -> 1.10;
-            case RENTAL_CAR, OWN_CAR, TAXI, PUBLIC_TRANSIT -> 1.25;
+            case RENTAL_CAR, OWN_CAR, TAXI, PUBLIC_TRANSIT, SHUTTLE -> 1.25;
             case AIR, KTX, SRT, EXPRESS_BUS -> 1.0;
         };
     }
@@ -369,7 +799,7 @@ public class TripPlanService {
     ) {
         return switch (mode) {
             case WALK -> 4.5;
-            case PUBLIC_TRANSIT -> 30.0;
+            case PUBLIC_TRANSIT, SHUTTLE -> 30.0;
             case RENTAL_CAR, OWN_CAR, TAXI -> 45.0;
             case KTX, SRT -> 180.0;
             case EXPRESS_BUS -> 70.0;
@@ -594,7 +1024,8 @@ public class TripPlanService {
                     new TripPlanDayResponse(
                             dayNumber,
                             date,
-                            applyOrders(items)
+                            applyOrders(items),
+                            List.of()
                     )
             );
         }
@@ -614,29 +1045,32 @@ public class TripPlanService {
                         trip.getStartTime()
                 );
 
-        items.add(
-                new TripPlanItemResponse(
-                        0,
-                        TripPlanItemType.DEPARTURE,
-                        null,
-                        null,
-                        trip.getDeparture(),
-                        "TRIP_ORIGIN",
-                        trip.getDepartureLatitude(),
-                        trip.getDepartureLongitude(),
-                        tripStart,
-                        null,
-                        null,
-                        null,
-                        "출발지역에서 여행을 시작합니다."
-                )
-        );
-
+        /*
+         * AIR 여행은 "출발지역 -> 공항"을 별도 일정으로 만들지 않는다.
+         * 선택한 항공편의 출발 공항을 여행 시작점으로 사용한다.
+         */
         if (
                 trip.getMainTransportMode()
                         != MainTransportMode.AIR
                         || outboundFlight == null
         ) {
+            items.add(
+                    new TripPlanItemResponse(
+                            0,
+                            TripPlanItemType.DEPARTURE,
+                            null,
+                            null,
+                            trip.getDeparture(),
+                            "TRIP_ORIGIN",
+                            trip.getDepartureLatitude(),
+                            trip.getDepartureLongitude(),
+                            tripStart,
+                            null,
+                            null,
+                            null,
+                            "출발지역에서 여행을 시작합니다."
+                    )
+            );
             return;
         }
 
@@ -650,23 +1084,31 @@ public class TripPlanService {
             airportTargetTime = tripStart;
         }
 
+        AirportInfo departureAirport =
+                airportInfo(
+                        outboundFlight.departureAirport()
+                );
+
+        AirportInfo arrivalAirport =
+                airportInfo(
+                        outboundFlight.arrivalAirport()
+                );
+
         items.add(
                 new TripPlanItemResponse(
                         0,
                         TripPlanItemType.AIRPORT,
                         null,
                         outboundFlight.departureAirport(),
-                        airportName(
-                                outboundFlight.departureAirport()
-                        ),
+                        departureAirport.name(),
                         "DEPARTURE_AIRPORT",
-                        null,
-                        null,
+                        departureAirport.latitude(),
+                        departureAirport.longitude(),
                         airportTargetTime,
                         outboundFlight.departureTime(),
                         null,
                         null,
-                        "선택한 항공편 탑승을 위해 출발 공항으로 이동합니다."
+                        "선택한 항공편으로 여행을 시작합니다."
                 )
         );
 
@@ -683,12 +1125,10 @@ public class TripPlanService {
                         TripPlanItemType.AIRPORT,
                         null,
                         outboundFlight.arrivalAirport(),
-                        airportName(
-                                outboundFlight.arrivalAirport()
-                        ),
+                        arrivalAirport.name(),
                         "ARRIVAL_AIRPORT",
-                        null,
-                        null,
+                        arrivalAirport.latitude(),
+                        arrivalAirport.longitude(),
                         outboundFlight.arrivalTime(),
                         null,
                         null,
@@ -704,6 +1144,10 @@ public class TripPlanService {
             List<TripPlanItemResponse> items
     ) {
 
+        /*
+         * AIR 여행은 복귀 공항/원래 출발지역 카드를 추가하지 않고
+         * 선택한 오는 편 항공편으로 여행을 종료한다.
+         */
         if (
                 trip.getMainTransportMode()
                         == MainTransportMode.AIR
@@ -716,52 +1160,37 @@ public class TripPlanService {
                                     AIRPORT_BUFFER_MINUTES
                             );
 
+            AirportInfo departureAirport =
+                    airportInfo(
+                            returnFlight.departureAirport()
+                    );
+
             items.add(
                     new TripPlanItemResponse(
                             0,
                             TripPlanItemType.AIRPORT,
                             null,
                             returnFlight.departureAirport(),
-                            airportName(
-                                    returnFlight.departureAirport()
-                            ),
+                            departureAirport.name(),
                             "RETURN_DEPARTURE_AIRPORT",
-                            null,
-                            null,
+                            departureAirport.latitude(),
+                            departureAirport.longitude(),
                             airportArrivalTarget,
                             returnFlight.departureTime(),
                             null,
                             localSegmentMode(trip),
-                            "오는 편 탑승을 위해 목적지 공항으로 이동합니다."
+                            "오는 편 탑승을 위해 공항으로 이동합니다."
                     )
             );
 
             items.add(
                     flightItem(
                             returnFlight,
-                            "오는 편으로 출발지역 공항까지 이동합니다."
+                            "오는 편 항공편으로 여행을 종료합니다."
                     )
             );
 
-            items.add(
-                    new TripPlanItemResponse(
-                            0,
-                            TripPlanItemType.AIRPORT,
-                            null,
-                            returnFlight.arrivalAirport(),
-                            airportName(
-                                    returnFlight.arrivalAirport()
-                            ),
-                            "RETURN_ARRIVAL_AIRPORT",
-                            null,
-                            null,
-                            returnFlight.arrivalTime(),
-                            null,
-                            null,
-                            null,
-                            "출발지역 공항에 도착했습니다."
-                    )
-            );
+            return;
         }
 
         LocalDateTime tripEnd =
@@ -780,9 +1209,7 @@ public class TripPlanService {
                         "TRIP_END",
                         trip.getDepartureLatitude(),
                         trip.getDepartureLongitude(),
-                        returnFlight == null
-                                ? null
-                                : returnFlight.arrivalTime(),
+                        null,
                         tripEnd,
                         null,
                         null,
@@ -1026,29 +1453,97 @@ public class TripPlanService {
         return result;
     }
 
-    private String airportName(
+    private AirportInfo airportInfo(
             String code
     ) {
 
         if (code == null) {
-            return "공항";
+            return new AirportInfo(
+                    "공항",
+                    null,
+                    null
+            );
         }
 
         return switch (code.toUpperCase()) {
-            case "GMP" -> "김포국제공항";
-            case "CJU" -> "제주국제공항";
-            case "PUS" -> "김해국제공항";
-            case "TAE" -> "대구국제공항";
-            case "USN" -> "울산공항";
-            case "KWJ" -> "광주공항";
-            case "RSU" -> "여수공항";
-            case "HIN" -> "사천공항";
-            case "KPO" -> "포항경주공항";
-            case "CJJ" -> "청주국제공항";
-            case "KUV" -> "군산공항";
-            case "YNY" -> "양양국제공항";
-            case "WJU" -> "원주공항";
-            default -> code + " 공항";
+            case "GMP" -> new AirportInfo(
+                    "김포국제공항",
+                    37.558311,
+                    126.790586
+            );
+            case "CJU" -> new AirportInfo(
+                    "제주국제공항",
+                    33.510413,
+                    126.491353
+            );
+            case "PUS" -> new AirportInfo(
+                    "김해국제공항",
+                    35.179554,
+                    128.938198
+            );
+            case "TAE" -> new AirportInfo(
+                    "대구국제공항",
+                    35.894108,
+                    128.658856
+            );
+            case "USN" -> new AirportInfo(
+                    "울산공항",
+                    35.593669,
+                    129.351722
+            );
+            case "KWJ" -> new AirportInfo(
+                    "광주공항",
+                    35.126389,
+                    126.808889
+            );
+            case "RSU" -> new AirportInfo(
+                    "여수공항",
+                    34.842328,
+                    127.616850
+            );
+            case "HIN" -> new AirportInfo(
+                    "사천공항",
+                    35.088591,
+                    128.071747
+            );
+            case "KPO" -> new AirportInfo(
+                    "포항경주공항",
+                    35.987858,
+                    129.420383
+            );
+            case "CJJ" -> new AirportInfo(
+                    "청주국제공항",
+                    36.716600,
+                    127.499100
+            );
+            case "KUV" -> new AirportInfo(
+                    "군산공항",
+                    35.903800,
+                    126.615900
+            );
+            case "YNY" -> new AirportInfo(
+                    "양양국제공항",
+                    38.061300,
+                    128.669200
+            );
+            case "WJU" -> new AirportInfo(
+                    "원주공항",
+                    37.438100,
+                    127.960300
+            );
+            default -> new AirportInfo(
+                    code + " 공항",
+                    null,
+                    null
+            );
         };
     }
+
+    private record AirportInfo(
+            String name,
+            Double latitude,
+            Double longitude
+    ) {
+    }
+
 }
