@@ -70,6 +70,8 @@ public class SecurityConfig {
                                 "/health",
                                 "/api/users/signup",
                                 "/api/users/login",
+                                "/api/users/refresh",
+                                "/api/users/logout",
                                 "/swagger",
                                 "/swagger/**",
                                 "/swagger-ui/**",
@@ -80,6 +82,23 @@ public class SecurityConfig {
                         // 그 외 API는 JWT 인증 필요
                         .anyRequest()
                         .authenticated()
+                )
+
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint((request, response, exception) -> {
+                            response.setStatus(401);
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write(
+                                    "{\"success\":false,\"message\":\"인증이 필요합니다.\"}"
+                            );
+                        })
+                        .accessDeniedHandler((request, response, exception) -> {
+                            response.setStatus(403);
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write(
+                                    "{\"success\":false,\"message\":\"접근 권한이 없습니다.\"}"
+                            );
+                        })
                 )
 
                 .addFilterBefore(
@@ -130,7 +149,7 @@ public class SecurityConfig {
         );
 
         // 현재 JWT를 Cookie가 아닌 Authorization Header로 사용하므로 false
-        configuration.setAllowCredentials(false);
+        configuration.setAllowCredentials(true);
 
         // Preflight 결과 캐시
         configuration.setMaxAge(3600L);

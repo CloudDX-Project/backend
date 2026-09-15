@@ -21,6 +21,10 @@ spring:
 jwt:
   secret: github-actions-test-secret-key-must-be-long-enough-123456789
   access-token-expiration: 3600000
+  refresh-token-expiration: 2592000000
+  refresh-store-enabled: false
+  refresh-cookie-secure: false
+  refresh-cookie-same-site: Lax
 
 weather:
   kma:
