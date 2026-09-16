@@ -673,8 +673,9 @@ public class AeroDataBoxFlightClient {
 
                                 airlineCode,
 
-                                departureTime
-                                        .toLocalDate()
+                                departureTime,
+
+                                flightNumber
                         );
 
 

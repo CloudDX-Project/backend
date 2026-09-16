@@ -15,6 +15,8 @@ import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 @Service
 @RequiredArgsConstructor
@@ -130,30 +132,40 @@ public class WeatherService {
 
 
         /*
-         * 가까운 날짜
-         * → 단기예보 우선
+         * 서로 독립적인 기상청 단기·중기예보를 동시에 조회한다.
+         * 첫 응답 시간은 두 외부 호출의 합이 아니라
+         * 더 오래 걸린 한 호출 수준으로 줄어든다.
          */
-        weatherByDate.putAll(
+        CompletableFuture<Map<LocalDate, WeatherCondition>>
+                shortWeatherFuture =
+                CompletableFuture.supplyAsync(() ->
+                        shortWeatherClient.getDailyWeather(
+                                latitude,
+                                longitude,
+                                startDate,
+                                endDate
+                        )
+                );
 
-                shortWeatherClient.getDailyWeather(
-                        latitude,
-                        longitude,
-                        startDate,
-                        endDate
-                )
-        );
-
+        CompletableFuture<Map<LocalDate, WeatherCondition>>
+                midWeatherFuture =
+                CompletableFuture.supplyAsync(() ->
+                        midWeatherClient.getDailyWeather(
+                                destination,
+                                startDate,
+                                endDate
+                        )
+                );
 
         /*
-         * 단기예보로 채우지 못한 날짜
-         * → 중기예보
+         * 가까운 날짜는 단기예보를 우선하고,
+         * 단기예보로 채우지 못한 날짜만 중기예보로 보완한다.
          */
-        midWeatherClient
-                .getDailyWeather(
-                        destination,
-                        startDate,
-                        endDate
-                )
+        weatherByDate.putAll(
+                awaitWeather(shortWeatherFuture)
+        );
+
+        awaitWeather(midWeatherFuture)
                 .forEach(
                         weatherByDate::putIfAbsent
                 );
@@ -183,5 +195,29 @@ public class WeatherService {
                 )
 
                 .toList();
+    }
+
+
+    /*
+     * CompletableFuture가 외부 API 예외를 감싸더라도
+     * 기존 동기 호출과 같은 예외 타입을 유지한다.
+     */
+    private <T> T awaitWeather(
+            CompletableFuture<T> future
+    ) {
+
+        try {
+
+            return future.join();
+
+        } catch (CompletionException e) {
+
+            if (e.getCause() instanceof RuntimeException cause) {
+
+                throw cause;
+            }
+
+            throw e;
+        }
     }
 }

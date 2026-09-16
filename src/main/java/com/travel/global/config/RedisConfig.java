@@ -2,6 +2,8 @@ package com.travel.global.config;
 
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
@@ -20,7 +22,11 @@ import java.util.Map;
 public class RedisConfig {
 
     @Bean
-    public CacheManager cacheManager(
+    @ConditionalOnProperty(
+            name = "app.cache.provider",
+            havingValue = "redis"
+    )
+    public CacheManager redisCacheManager(
             RedisConnectionFactory connectionFactory
     ) {
 
@@ -196,5 +202,23 @@ public class RedisConfig {
                 )
 
                 .build();
+    }
+
+    @Bean
+    @ConditionalOnProperty(
+            name = "app.cache.provider",
+            havingValue = "simple",
+            matchIfMissing = true
+    )
+    public CacheManager simpleCacheManager() {
+        return new ConcurrentMapCacheManager(
+                "weatherShort",
+                "weatherMid",
+                "flightSchedule",
+                "cafeCandidates",
+                "tripPlanAttractionCandidates",
+                "tripPlanRestaurantCandidates",
+                "tripPlanCafeCandidates"
+        );
     }
 }

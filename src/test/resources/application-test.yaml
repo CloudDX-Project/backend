@@ -26,6 +26,10 @@ jwt:
   refresh-cookie-secure: false
   refresh-cookie-same-site: Lax
 
+app:
+  cache:
+    provider: simple
+
 weather:
   kma:
     short:
