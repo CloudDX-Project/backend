@@ -9,10 +9,14 @@ import com.travel.flight.type.FlightPriceType;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
+
+import java.net.http.HttpClient;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -56,56 +60,56 @@ public class AeroDataBoxFlightClient {
     private final FlightPriceEstimator priceEstimator;
 
 
-private synchronized void waitForRateLimit() {
+    private synchronized void waitForRateLimit() {
 
-    while (true) {
+        while (true) {
 
-        long now =
-                System.currentTimeMillis();
-
-
-        long elapsed =
-                now
-                        - lastRequestTime;
+            long now =
+                    System.currentTimeMillis();
 
 
-        long waitTime =
-                MIN_REQUEST_INTERVAL_MS
-                        - elapsed;
+            long elapsed =
+                    now
+                            - lastRequestTime;
 
 
-        if (
-                waitTime <= 0
-        ) {
-
-            lastRequestTime =
-                    now;
-
-            return;
-        }
+            long waitTime =
+                    MIN_REQUEST_INTERVAL_MS
+                            - elapsed;
 
 
-        try {
+            if (
+                    waitTime <= 0
+            ) {
 
-            wait(
-                    waitTime
-            );
+                lastRequestTime =
+                        now;
 
-        } catch (
-                InterruptedException e
-        ) {
-
-            Thread.currentThread()
-                    .interrupt();
+                return;
+            }
 
 
-            throw new IllegalStateException(
-                    "AeroDataBox 요청 대기 중 중단되었습니다.",
-                    e
-            );
+            try {
+
+                wait(
+                        waitTime
+                );
+
+            } catch (
+                    InterruptedException e
+            ) {
+
+                Thread.currentThread()
+                        .interrupt();
+
+
+                throw new IllegalStateException(
+                        "AeroDataBox 요청 대기 중 중단되었습니다.",
+                        e
+                );
+            }
         }
     }
-}
 
 
 
@@ -123,10 +127,35 @@ private synchronized void waitForRateLimit() {
             FlightPriceEstimator priceEstimator
     ) {
 
+        /*
+         * RestClient가 Apache HttpClient를 자동 선택하면
+         * 429 응답에 대해 HttpRequestRetryExec가
+         * 같은 요청을 자동 재실행할 수 있다.
+         *
+         * AeroDataBox / RapidAPI에서는
+         * 429 발생 시 추가 호출 자체가 호출량을 더 소비할 수 있으므로,
+         * JDK HttpClient를 명시적으로 사용해서
+         * Apache 자동 재시도 경로를 사용하지 않도록 한다.
+         */
+        HttpClient httpClient =
+                HttpClient
+                        .newBuilder()
+                        .build();
+
+
+        JdkClientHttpRequestFactory requestFactory =
+                new JdkClientHttpRequestFactory(
+                        httpClient
+                );
+
+
         this.restClient =
                 RestClient
                         .builder()
                         .baseUrl(baseUrl)
+                        .requestFactory(
+                                requestFactory
+                        )
                         .build();
 
 
@@ -152,7 +181,7 @@ private synchronized void waitForRateLimit() {
                             + "#to + ':' + "
                             + "#peopleCount + ':' + "
                             + "#direction",
-            unless = "#result == null || #result.isEmpty()"
+            unless = "#result == null"
     )
     public List<FlightCandidate> search(
 
@@ -421,13 +450,99 @@ private synchronized void waitForRateLimit() {
 
             /*
              * 호출 제한
+             *
+             * 여기서는 재시도하지 않는다.
+             *
+             * 429가 순간 호출 제한인지,
+             * 구독 요청량 소진인지 확인할 수 있도록
+             * RapidAPI 관련 응답 헤더를 예외 메시지에 남긴다.
              */
             if (
                     status == 429
             ) {
 
+                HttpHeaders headers =
+                        e.getResponseHeaders();
+
+
+                String retryAfter =
+                        firstHeader(
+                                headers,
+                                HttpHeaders.RETRY_AFTER
+                        );
+
+
+                String rateRemaining =
+                        firstHeader(
+                                headers,
+                                "x-ratelimit-remaining"
+                        );
+
+
+                String rateReset =
+                        firstHeader(
+                                headers,
+                                "x-ratelimit-reset"
+                        );
+
+
+                String requestRemaining =
+                        firstHeader(
+                                headers,
+                                "x-ratelimit-requests-remaining"
+                        );
+
+
+                String requestReset =
+                        firstHeader(
+                                headers,
+                                "x-ratelimit-requests-reset"
+                        );
+
+
+                StringBuilder message =
+                        new StringBuilder(
+                                "AeroDataBox API 호출 한도를 초과했습니다."
+                        );
+
+
+                appendHeaderValue(
+                        message,
+                        "Retry-After",
+                        retryAfter
+                );
+
+
+                appendHeaderValue(
+                        message,
+                        "RateRemaining",
+                        rateRemaining
+                );
+
+
+                appendHeaderValue(
+                        message,
+                        "RateReset",
+                        rateReset
+                );
+
+
+                appendHeaderValue(
+                        message,
+                        "RequestRemaining",
+                        requestRemaining
+                );
+
+
+                appendHeaderValue(
+                        message,
+                        "RequestReset",
+                        requestReset
+                );
+
+
                 throw new IllegalStateException(
-                        "AeroDataBox API 호출 한도를 초과했습니다.",
+                        message.toString(),
                         e
                 );
             }
@@ -697,6 +812,58 @@ private synchronized void waitForRateLimit() {
                         ""
                 )
                 .trim();
+    }
+
+
+    private String firstHeader(
+            HttpHeaders headers,
+            String name
+    ) {
+
+        if (
+                headers == null
+                        || name == null
+                        || name.isBlank()
+        ) {
+
+            return null;
+        }
+
+
+        return headers.getFirst(
+                name
+        );
+    }
+
+
+    private void appendHeaderValue(
+            StringBuilder message,
+            String name,
+            String value
+    ) {
+
+        if (
+                value == null
+                        || value.isBlank()
+        ) {
+
+            return;
+        }
+
+
+        message
+                .append(
+                        " "
+                )
+                .append(
+                        name
+                )
+                .append(
+                        "="
+                )
+                .append(
+                        value
+                );
     }
 
 
