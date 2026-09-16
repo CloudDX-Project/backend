@@ -24,6 +24,8 @@ public record RestaurantData(
 
         String placeUrl,
 
+        String representativeImageUrl,
+
         Double rating,
 
         Integer reviewCount,

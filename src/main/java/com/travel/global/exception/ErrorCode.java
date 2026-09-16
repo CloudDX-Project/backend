@@ -110,6 +110,18 @@ public enum ErrorCode {
             "이동 구간 순서 정보가 올바르지 않습니다."
     ),
 
+
+    // Restaurant / Cafe
+    RESTAURANT_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "식당 정보를 찾을 수 없습니다."
+    ),
+
+    CAFE_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "카페 정보를 찾을 수 없습니다."
+    ),
+
     // Vehicle
     VEHICLE_NOT_FOUND(
             HttpStatus.NOT_FOUND,

@@ -1,17 +1,20 @@
 package com.travel.restaurant;
 
+import com.travel.restaurant.dto.RestaurantDetailResponse;
 import com.travel.restaurant.dto.RestaurantRecommendRequest;
 import com.travel.restaurant.dto.RestaurantRecommendResponse;
 import com.travel.restaurant.dto.RestaurantSearchRequest;
 import com.travel.restaurant.dto.RestaurantSearchResponse;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/restaurants")
+@RequestMapping({"/api/restaurants", "/api/v1/restaurants"})
 public class RestaurantController {
 
     private final RestaurantService restaurantService;
@@ -30,6 +33,16 @@ public class RestaurantController {
 
         this.restaurantRecommendationService =
                 restaurantRecommendationService;
+    }
+
+
+    @GetMapping("/{restaurantId}")
+    public RestaurantDetailResponse getDetail(
+            @PathVariable Long restaurantId
+    ) {
+        return restaurantService.getDetail(
+                restaurantId
+        );
     }
 
     @PostMapping("/search")

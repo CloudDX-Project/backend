@@ -3,10 +3,13 @@ package com.travel.cafe;
 import com.travel.cafe.data.CafeData;
 import com.travel.cafe.data.CafeMenuData;
 import com.travel.cafe.dto.CafeCandidate;
+import com.travel.cafe.dto.CafeDetailResponse;
 import com.travel.cafe.dto.CafeMenuResponse;
 import com.travel.cafe.dto.CafeSearchRequest;
 import com.travel.cafe.dto.CafeSearchResponse;
 import com.travel.cafe.repository.CafeRepository;
+import com.travel.global.exception.BusinessException;
+import com.travel.global.exception.ErrorCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +34,39 @@ public class CafeService {
     ) {
         this.cafeRepository =
                 cafeRepository;
+    }
+
+
+    @Transactional(readOnly = true)
+    public CafeDetailResponse getDetail(
+            Long cafeId
+    ) {
+
+        CafeData cafe =
+                cafeRepository.findById(
+                        cafeId
+                );
+
+        if (cafe == null) {
+            throw new BusinessException(
+                    ErrorCode.CAFE_NOT_FOUND
+            );
+        }
+
+        List<CafeMenuData> menus =
+                cafeRepository
+                        .findMenusByCafeIds(
+                                List.of(cafeId)
+                        )
+                        .getOrDefault(
+                                cafeId,
+                                List.of()
+                        );
+
+        return CafeDetailResponse.from(
+                cafe,
+                menus
+        );
     }
 
     @Transactional(readOnly = true)

@@ -25,6 +25,8 @@ public record CafeData(
 
         String placeUrl,
 
+        String representativeImageUrl,
+
         Double rating,
 
         Integer reviewCount,

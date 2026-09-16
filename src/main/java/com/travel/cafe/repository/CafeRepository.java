@@ -32,6 +32,7 @@ public class CafeRepository {
                 latitude,
                 longitude,
                 place_url,
+                representative_image_url,
                 rating,
                 review_count,
                 business_hours,
@@ -45,6 +46,36 @@ public class CafeRepository {
             FROM cafes
             WHERE latitude IS NOT NULL
               AND longitude IS NOT NULL
+            """;
+
+
+    private static final String FIND_BY_ID_SQL =
+            """
+            SELECT
+                id,
+                kakao_place_id,
+                cafe_name,
+                category,
+                phone,
+                address,
+                road_address,
+                latitude,
+                longitude,
+                place_url,
+                representative_image_url,
+                rating,
+                review_count,
+                business_hours,
+                summary,
+                tags,
+                facilities,
+                last_scraped_at,
+                last_scrape_status,
+                created_at,
+                updated_at
+            FROM cafes
+            WHERE id = :cafeId
+            LIMIT 1
             """;
 
     private static final String FIND_MENUS_SQL =
@@ -85,6 +116,30 @@ public class CafeRepository {
                 Map.of(),
                 CAFE_ROW_MAPPER
         );
+    }
+
+
+    public CafeData findById(
+            Long cafeId
+    ) {
+
+        MapSqlParameterSource params =
+                new MapSqlParameterSource()
+                        .addValue(
+                                "cafeId",
+                                cafeId
+                        );
+
+        List<CafeData> cafes =
+                jdbcTemplate.query(
+                        FIND_BY_ID_SQL,
+                        params,
+                        CAFE_ROW_MAPPER
+                );
+
+        return cafes.isEmpty()
+                ? null
+                : cafes.get(0);
     }
 
     public Map<Long, List<CafeMenuData>> findMenusByCafeIds(
@@ -137,6 +192,7 @@ public class CafeRepository {
                             nullableDouble(rs, "latitude"),
                             nullableDouble(rs, "longitude"),
                             rs.getString("place_url"),
+                            rs.getString("representative_image_url"),
                             nullableDouble(rs, "rating"),
                             nullableInteger(rs, "review_count"),
                             rs.getString("business_hours"),

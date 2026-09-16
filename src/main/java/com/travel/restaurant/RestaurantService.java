@@ -2,7 +2,10 @@ package com.travel.restaurant;
 
 import com.travel.restaurant.data.RestaurantData;
 import com.travel.restaurant.data.RestaurantMenuData;
+import com.travel.global.exception.BusinessException;
+import com.travel.global.exception.ErrorCode;
 import com.travel.restaurant.dto.RestaurantCandidate;
+import com.travel.restaurant.dto.RestaurantDetailResponse;
 import com.travel.restaurant.dto.RestaurantSearchRequest;
 import com.travel.restaurant.dto.RestaurantSearchResponse;
 import com.travel.restaurant.repository.RestaurantRepository;
@@ -34,6 +37,39 @@ public class RestaurantService {
     ) {
         this.restaurantRepository =
                 restaurantRepository;
+    }
+
+
+    @Transactional(readOnly = true)
+    public RestaurantDetailResponse getDetail(
+            Long restaurantId
+    ) {
+
+        RestaurantData restaurant =
+                restaurantRepository.findById(
+                        restaurantId
+                );
+
+        if (restaurant == null) {
+            throw new BusinessException(
+                    ErrorCode.RESTAURANT_NOT_FOUND
+            );
+        }
+
+        List<RestaurantMenuData> menus =
+                restaurantRepository
+                        .findMenusByRestaurantIds(
+                                List.of(restaurantId)
+                        )
+                        .getOrDefault(
+                                restaurantId,
+                                List.of()
+                        );
+
+        return RestaurantDetailResponse.from(
+                restaurant,
+                menus
+        );
     }
 
     @Transactional(readOnly = true)

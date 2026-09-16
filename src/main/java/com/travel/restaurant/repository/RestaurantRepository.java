@@ -31,6 +31,7 @@ public class RestaurantRepository {
                 latitude,
                 longitude,
                 place_url,
+                representative_image_url,
                 rating,
                 review_count,
                 business_hours,
@@ -44,6 +45,36 @@ public class RestaurantRepository {
             FROM restaurants
             WHERE latitude IS NOT NULL
               AND longitude IS NOT NULL
+            """;
+
+
+    private static final String FIND_BY_ID_SQL =
+            """
+            SELECT
+                id,
+                kakao_place_id,
+                restaurant_name,
+                category,
+                phone,
+                address,
+                road_address,
+                latitude,
+                longitude,
+                place_url,
+                representative_image_url,
+                rating,
+                review_count,
+                business_hours,
+                summary,
+                tags,
+                facilities,
+                last_scraped_at,
+                last_scrape_status,
+                created_at,
+                updated_at
+            FROM restaurants
+            WHERE id = :restaurantId
+            LIMIT 1
             """;
 
     private static final String FIND_MENUS_SQL =
@@ -85,6 +116,30 @@ public class RestaurantRepository {
                 Map.of(),
                 RESTAURANT_ROW_MAPPER
         );
+    }
+
+
+    public RestaurantData findById(
+            Long restaurantId
+    ) {
+
+        MapSqlParameterSource params =
+                new MapSqlParameterSource()
+                        .addValue(
+                                "restaurantId",
+                                restaurantId
+                        );
+
+        List<RestaurantData> restaurants =
+                jdbcTemplate.query(
+                        FIND_BY_ID_SQL,
+                        params,
+                        RESTAURANT_ROW_MAPPER
+                );
+
+        return restaurants.isEmpty()
+                ? null
+                : restaurants.get(0);
     }
 
     public Map<Long, List<RestaurantMenuData>>
@@ -174,6 +229,10 @@ public class RestaurantRepository {
 
                             rs.getString(
                                     "place_url"
+                            ),
+
+                            rs.getString(
+                                    "representative_image_url"
                             ),
 
                             nullableDouble(
