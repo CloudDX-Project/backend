@@ -3,6 +3,9 @@ package com.travel.trip.plan.service;
 import com.travel.flight.dto.FlightCandidate;
 import com.travel.global.exception.BusinessException;
 import com.travel.global.exception.ErrorCode;
+import com.travel.routing.dto.DrivingRouteResult;
+import com.travel.routing.service.RoutingService;
+import com.travel.routing.util.RoutePathCodec;
 import com.travel.trip.dto.TransportSegmentResponse;
 import com.travel.trip.dto.TripSelectedRentalResponse;
 import com.travel.trip.entity.LocalTransportMode;
@@ -22,6 +25,7 @@ import com.travel.trip.plan.repository.TripPlanItemRepository;
 import com.travel.trip.plan.type.TripPlanItemType;
 import com.travel.trip.repository.TransportSegmentRepository;
 import com.travel.trip.repository.TripRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +38,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 @Transactional(readOnly = true)
 public class TripPlanService {
@@ -46,13 +51,15 @@ public class TripPlanService {
     private final TransportSegmentRepository transportSegmentRepository;
     private final TripPlanCandidateService candidateService;
     private final TripPlanBedrockService bedrockService;
+    private final RoutingService routingService;
 
     public TripPlanService(
             TripRepository tripRepository,
             TripPlanItemRepository tripPlanItemRepository,
             TransportSegmentRepository transportSegmentRepository,
             TripPlanCandidateService candidateService,
-            TripPlanBedrockService bedrockService
+            TripPlanBedrockService bedrockService,
+            RoutingService routingService
     ) {
         this.tripRepository =
                 tripRepository;
@@ -64,6 +71,8 @@ public class TripPlanService {
                 candidateService;
         this.bedrockService =
                 bedrockService;
+        this.routingService =
+                routingService;
     }
 
     @Transactional
@@ -125,7 +134,7 @@ public class TripPlanService {
         );
 
         Map<Integer, List<TransportSegmentResponse>> transportSegmentsByDay =
-                rebuildEstimatedTransportSegments(
+                rebuildTransportSegments(
                         trip,
                         days,
                         outboundFlight,
@@ -140,7 +149,7 @@ public class TripPlanService {
         return new TripPlanResponse(
                 trip.getId(),
                 plannerResult.planner(),
-                "AI_ESTIMATE_ROUTING",
+                "KAKAO_MOBILITY_ROUTING_WITH_FALLBACK",
                 trip.getMainTransportMode(),
                 trip.getLocalTransportMode(),
                 candidatePool.accommodation(),
@@ -242,7 +251,7 @@ public class TripPlanService {
         tripPlanItemRepository.flush();
     }
 
-    private Map<Integer, List<TransportSegmentResponse>> rebuildEstimatedTransportSegments(
+    private Map<Integer, List<TransportSegmentResponse>> rebuildTransportSegments(
             Trip trip,
             List<TripPlanDayResponse> days,
             FlightCandidate outboundFlight,
@@ -357,6 +366,8 @@ public class TripPlanService {
                                             .distanceKm(null)
                                             .durationMinutes(durationMinutes)
                                             .cost(0L)
+                                            .routeProvider("FLIGHT")
+                                            .routePathJson(null)
                                             .build();
 
                             tripDay.addTransportSegment(segment);
@@ -423,7 +434,7 @@ public class TripPlanService {
                     newSegments.add(shuttle);
 
                     TransportSegment localRoute =
-                            createEstimatedRouteSegment(
+                            createRoutedSegment(
                                     tripDay,
                                     sequence,
                                     SegmentTransportMode.RENTAL_CAR,
@@ -461,7 +472,7 @@ public class TripPlanService {
                                     : previous.startAt();
 
                     TransportSegment localRoute =
-                            createEstimatedRouteSegment(
+                            createRoutedSegment(
                                     tripDay,
                                     sequence,
                                     SegmentTransportMode.RENTAL_CAR,
@@ -515,7 +526,7 @@ public class TripPlanService {
                 }
 
                 TransportSegment route =
-                        createEstimatedRouteSegment(
+                        createRoutedSegment(
                                 tripDay,
                                 sequence,
                                 mode,
@@ -585,7 +596,7 @@ public class TripPlanService {
         return result;
     }
 
-    private TransportSegment createEstimatedRouteSegment(
+    private TransportSegment createRoutedSegment(
             TripDay tripDay,
             int sequence,
             SegmentTransportMode mode,
@@ -607,6 +618,80 @@ public class TripPlanService {
             return null;
         }
 
+        if (isKakaoDrivingMode(mode)) {
+            try {
+                DrivingRouteResult route =
+                        routingService.findDrivingRoute(
+                                departureLatitude,
+                                departureLongitude,
+                                arrivalLatitude,
+                                arrivalLongitude
+                        );
+
+                double distanceKm =
+                        roundOneDecimal(
+                                route.distanceMeters() / 1000.0
+                        );
+
+                long durationMinutes =
+                        Math.max(
+                                1L,
+                                (long) Math.ceil(
+                                        route.durationSeconds() / 60.0
+                                )
+                        );
+
+                long cost =
+                        calculateActualRouteCost(
+                                mode,
+                                distanceKm,
+                                route
+                        );
+
+                LocalDateTime arrivalAt =
+                        departureAt == null
+                                ? preferredArrivalAt
+                                : departureAt.plusMinutes(
+                                durationMinutes
+                        );
+
+                return TransportSegment.builder()
+                        .tripDay(tripDay)
+                        .sequence(sequence)
+                        .mode(mode)
+                        .departureName(departureName)
+                        .arrivalName(arrivalName)
+                        .departureLatitude(departureLatitude)
+                        .departureLongitude(departureLongitude)
+                        .arrivalLatitude(arrivalLatitude)
+                        .arrivalLongitude(arrivalLongitude)
+                        .departureAt(departureAt)
+                        .arrivalAt(arrivalAt)
+                        .distanceKm(distanceKm)
+                        .durationMinutes(durationMinutes)
+                        .cost(cost)
+                        .routeProvider("KAKAO_MOBILITY")
+                        .routePathJson(
+                                RoutePathCodec.encode(
+                                        route.path()
+                                )
+                        )
+                        .build();
+
+            } catch (RuntimeException e) {
+                log.warn(
+                        "Kakao Mobility 길찾기 실패. 추정 경로로 대체합니다. {} -> {}: {}",
+                        departureName,
+                        arrivalName,
+                        e.getMessage()
+                );
+            }
+        }
+
+        /*
+         * Kakao 자동차 길찾기를 사용할 수 없는 모드이거나
+         * 외부 API 호출에 실패한 경우 기존 추정식을 fallback으로 사용한다.
+         */
         double straightDistanceKm =
                 haversineKm(
                         departureLatitude,
@@ -659,6 +744,8 @@ public class TripPlanService {
                 .distanceKm(distanceKm)
                 .durationMinutes(durationMinutes)
                 .cost(cost)
+                .routeProvider("ESTIMATED")
+                .routePathJson(null)
                 .build();
     }
 
@@ -676,6 +763,53 @@ public class TripPlanService {
             LocalDateTime arrivalAt,
             long durationMinutes
     ) {
+        Double distanceKm = null;
+        String routeProvider = "FIXED";
+        String routePathJson = null;
+
+        /*
+         * 셔틀 시간은 업체가 제공한 검증값을 유지하되,
+         * 지도 Polyline을 위해 도로 형상만 Kakao에서 받아온다.
+         */
+        if (
+                mode == SegmentTransportMode.SHUTTLE
+                        && departureLatitude != null
+                        && departureLongitude != null
+                        && arrivalLatitude != null
+                        && arrivalLongitude != null
+        ) {
+            try {
+                DrivingRouteResult route =
+                        routingService.findDrivingRoute(
+                                departureLatitude,
+                                departureLongitude,
+                                arrivalLatitude,
+                                arrivalLongitude
+                        );
+
+                distanceKm =
+                        roundOneDecimal(
+                                route.distanceMeters() / 1000.0
+                        );
+
+                routeProvider =
+                        "KAKAO_MOBILITY_FIXED_TIME";
+
+                routePathJson =
+                        RoutePathCodec.encode(
+                                route.path()
+                        );
+
+            } catch (RuntimeException e) {
+                log.warn(
+                        "Kakao Mobility 셔틀 경로 형상 조회 실패. {} -> {}: {}",
+                        departureName,
+                        arrivalName,
+                        e.getMessage()
+                );
+            }
+        }
+
         return TransportSegment.builder()
                 .tripDay(tripDay)
                 .sequence(sequence)
@@ -688,10 +822,42 @@ public class TripPlanService {
                 .arrivalLongitude(arrivalLongitude)
                 .departureAt(departureAt)
                 .arrivalAt(arrivalAt)
-                .distanceKm(null)
+                .distanceKm(distanceKm)
                 .durationMinutes(durationMinutes)
                 .cost(0L)
+                .routeProvider(routeProvider)
+                .routePathJson(routePathJson)
                 .build();
+    }
+
+    private boolean isKakaoDrivingMode(
+            SegmentTransportMode mode
+    ) {
+        return mode == SegmentTransportMode.RENTAL_CAR
+                || mode == SegmentTransportMode.OWN_CAR
+                || mode == SegmentTransportMode.TAXI;
+    }
+
+    private long calculateActualRouteCost(
+            SegmentTransportMode mode,
+            double distanceKm,
+            DrivingRouteResult route
+    ) {
+        if (mode == SegmentTransportMode.TAXI) {
+            return route.taxiFare();
+        }
+
+        if (
+                mode == SegmentTransportMode.RENTAL_CAR
+                        || mode == SegmentTransportMode.OWN_CAR
+        ) {
+            return mockTransportCost(
+                    mode,
+                    distanceKm
+            ) + route.tollFare();
+        }
+
+        return 0L;
     }
 
     private FlightCandidate resolveFlightCandidate(

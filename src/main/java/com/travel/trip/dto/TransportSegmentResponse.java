@@ -1,10 +1,13 @@
 package com.travel.trip.dto;
 
 import com.travel.trip.entity.SegmentTransportMode;
+import com.travel.routing.dto.RoutePoint;
+import com.travel.routing.util.RoutePathCodec;
 import com.travel.trip.entity.TransportSegment;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record TransportSegmentResponse(
 
@@ -40,7 +43,11 @@ public record TransportSegmentResponse(
 
         Long durationMinutes,
 
-        Long cost
+        Long cost,
+
+        String routeProvider,
+
+        List<RoutePoint> path
 
 ) {
 
@@ -81,7 +88,13 @@ public record TransportSegmentResponse(
 
                 segment.getDurationMinutes(),
 
-                segment.getCost()
+                segment.getCost(),
+
+                segment.getRouteProvider(),
+
+                RoutePathCodec.decode(
+                        segment.getRoutePathJson()
+                )
         );
     }
 }
