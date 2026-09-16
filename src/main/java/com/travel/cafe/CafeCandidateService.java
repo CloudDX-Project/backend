@@ -209,35 +209,35 @@ public class CafeCandidateService {
         /*
          * 일반 여행
          *
-         * 평점 50%
-         * 거리 35%
-         * 카페 특성 15%
+         * 평점/리뷰 Bayesian 품질 65%
+         * 거리 15%
+         * 카페 특성 20%
          *
          * FOOD 여행
          *
-         * 평점 45%
-         * 거리 20%
-         * 카페 특성 35%
+         * 평점/리뷰 Bayesian 품질 60%
+         * 거리 10%
+         * 카페 특성 30%
          */
         double baseScore;
 
         if (foodFocused) {
 
             baseScore =
-                    ratingScore * 0.45
+                    ratingScore * 0.60
                             +
-                            distanceScore * 0.20
+                            distanceScore * 0.10
                             +
-                            experienceScore * 0.35;
+                            experienceScore * 0.30;
 
         } else {
 
             baseScore =
-                    ratingScore * 0.50
+                    ratingScore * 0.65
                             +
-                            distanceScore * 0.35
+                            distanceScore * 0.15
                             +
-                            experienceScore * 0.15;
+                            experienceScore * 0.20;
         }
 
         return new CafeScoredCandidate(

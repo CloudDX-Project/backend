@@ -34,6 +34,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -128,6 +129,16 @@ public class TripPlanService {
                         returnFlight
                 );
 
+        /*
+         * Bedrock의 startTime은 목표 시각이다.
+         * 최종 저장 전 Kakao Mobility 실제 이동시간으로 각 로컬 일정의 도착/시작 시각을
+         * 다시 흘려 보내(time reflow) 화면 일정과 TransportSegment가 같은 시간축을 사용하게 한다.
+         */
+        days = reflowPlanTimesWithActualRoutes(
+                trip,
+                days
+        );
+
         persistPlanItems(
                 trip,
                 days
@@ -196,6 +207,228 @@ public class TripPlanService {
                     ErrorCode.TRIP_PLAN_RENTAL_SELECTION_REQUIRED
             );
         }
+    }
+
+    private List<TripPlanDayResponse> reflowPlanTimesWithActualRoutes(
+            Trip trip,
+            List<TripPlanDayResponse> days
+    ) {
+        List<TripPlanDayResponse> result = new ArrayList<>();
+
+        for (TripPlanDayResponse day : days) {
+            List<TripPlanItemResponse> source = day.items();
+            List<TripPlanItemResponse> aligned = new ArrayList<>();
+
+            for (int i = 0; i < source.size(); i++) {
+                TripPlanItemResponse current = source.get(i);
+
+                if (aligned.isEmpty()) {
+                    aligned.add(current);
+                    continue;
+                }
+
+                TripPlanItemResponse previous = aligned.get(aligned.size() - 1);
+
+                // 항공편과 항공편 직후 도착 공항은 선택한 실제 항공 시각을 그대로 보존한다.
+                if (current.type() == TripPlanItemType.FLIGHT
+                        || previous.type() == TripPlanItemType.FLIGHT) {
+                    aligned.add(current);
+                    continue;
+                }
+
+                // 귀국편 탑승 공항은 출발 90분 전이라는 고정 anchor를 유지한다.
+                if (isReturnDepartureAirport(current)) {
+                    aligned.add(current);
+                    continue;
+                }
+
+                String category = current.category() == null
+                        ? ""
+                        : current.category();
+
+                // 하루 시작/체크아웃 숙소는 그 자체가 출발 anchor다.
+                if (current.type() == TripPlanItemType.ACCOMMODATION
+                        && ("DAY_START".equals(category) || "CHECK_OUT".equals(category))) {
+                    aligned.add(current);
+                    continue;
+                }
+
+                LocalDateTime previousEnd = previous.endAt() != null
+                        ? previous.endAt()
+                        : previous.startAt();
+
+                if (previousEnd == null) {
+                    aligned.add(current);
+                    continue;
+                }
+
+                long travelMinutes = actualTravelMinutesForTimeline(
+                        trip,
+                        previous,
+                        current
+                );
+
+                LocalDateTime earliestStart = previousEnd.plusMinutes(travelMinutes);
+                LocalDateTime requestedStart = current.startAt();
+                LocalDateTime startAt = requestedStart == null
+                        ? earliestStart
+                        : (requestedStart.isAfter(earliestStart) ? requestedStart : earliestStart);
+
+                int stayMinutes = resolveStayMinutes(current);
+                LocalDateTime endAt;
+
+                if (current.type() == TripPlanItemType.ACCOMMODATION
+                        && "NIGHT_RETURN".equals(category)) {
+                    endAt = null;
+                } else if (stayMinutes > 0) {
+                    endAt = startAt.plusMinutes(stayMinutes);
+                } else {
+                    endAt = current.endAt();
+                }
+
+                aligned.add(copyWithTimes(current, startAt, endAt, stayMinutes));
+            }
+
+            result.add(new TripPlanDayResponse(
+                    day.dayNumber(),
+                    day.date(),
+                    applyOrders(aligned),
+                    List.of()
+            ));
+        }
+
+        return result;
+    }
+
+    private long actualTravelMinutesForTimeline(
+            Trip trip,
+            TripPlanItemResponse previous,
+            TripPlanItemResponse current
+    ) {
+        TripRentalSelection rental = trip.getSelectedRental();
+
+        if (trip.getLocalTransportMode() == LocalTransportMode.RENTAL_CAR
+                && rental != null
+                && isArrivalAirport(previous)) {
+            long routeMinutes = routeMinutes(
+                    rental.getLatitude(),
+                    rental.getLongitude(),
+                    current.latitude(),
+                    current.longitude()
+            );
+            return Math.max(0, rental.getEstimatedShuttleMinutes()) + routeMinutes;
+        }
+
+        if (trip.getLocalTransportMode() == LocalTransportMode.RENTAL_CAR
+                && rental != null
+                && isReturnDepartureAirport(current)) {
+            long routeMinutes = routeMinutes(
+                    previous.latitude(),
+                    previous.longitude(),
+                    rental.getLatitude(),
+                    rental.getLongitude()
+            );
+            return routeMinutes + Math.max(0, rental.getEstimatedShuttleMinutes());
+        }
+
+        return routeMinutes(
+                previous.latitude(),
+                previous.longitude(),
+                current.latitude(),
+                current.longitude()
+        );
+    }
+
+    private long routeMinutes(
+            Double originLatitude,
+            Double originLongitude,
+            Double destinationLatitude,
+            Double destinationLongitude
+    ) {
+        if (originLatitude == null
+                || originLongitude == null
+                || destinationLatitude == null
+                || destinationLongitude == null) {
+            return 0L;
+        }
+
+        try {
+            DrivingRouteResult route = routingService.findDrivingRoute(
+                    originLatitude,
+                    originLongitude,
+                    destinationLatitude,
+                    destinationLongitude
+            );
+            return Math.max(
+                    1L,
+                    (long) Math.ceil(route.durationSeconds() / 60.0)
+            );
+        } catch (RuntimeException e) {
+            double straightDistanceKm = haversineKm(
+                    originLatitude,
+                    originLongitude,
+                    destinationLatitude,
+                    destinationLongitude
+            );
+            double roadKm = straightDistanceKm * 1.25;
+            return Math.max(1L, Math.round(roadKm / 35.0 * 60.0));
+        }
+    }
+
+    private int resolveStayMinutes(TripPlanItemResponse item) {
+        if (item.stayMinutes() != null && item.stayMinutes() > 0) {
+            return item.stayMinutes();
+        }
+
+        if (item.startAt() != null
+                && item.endAt() != null
+                && item.endAt().isAfter(item.startAt())) {
+            long minutes = ChronoUnit.MINUTES.between(item.startAt(), item.endAt());
+            if (minutes > 0 && minutes <= 240) {
+                return (int) minutes;
+            }
+        }
+
+        if (item.type() == TripPlanItemType.ACCOMMODATION
+                && "CHECK_IN".equals(item.category())) {
+            return 30;
+        }
+
+        return switch (item.type()) {
+            case ATTRACTION -> 90;
+            case RESTAURANT -> 75;
+            case CAFE -> 60;
+            default -> 0;
+        };
+    }
+
+    private TripPlanItemResponse copyWithTimes(
+            TripPlanItemResponse item,
+            LocalDateTime startAt,
+            LocalDateTime endAt,
+            int stayMinutes
+    ) {
+
+        Integer effectiveStayMinutes =
+                stayMinutes > 0
+                        ? Integer.valueOf(stayMinutes)
+                        : item.stayMinutes();
+
+        return new TripPlanItemResponse(
+                item.order(),
+                item.type(),
+                item.placeId(),
+                item.referenceId(),
+                item.name(),
+                item.category(),
+                item.latitude(),
+                item.longitude(),
+                startAt,
+                endAt,
+                effectiveStayMinutes,
+                item.transportModeFromPrevious(),
+                item.reason()
+        );
     }
 
     private void persistPlanItems(
@@ -1128,13 +1361,27 @@ public class TripPlanService {
             }
 
             if (!firstDay) {
+                LocalTime accommodationDepartureTime =
+                        lastDay
+                                ? parseAccommodationTime(
+                                candidatePool.accommodation().checkOutTime(),
+                                LocalTime.of(10, 0)
+                        )
+                                : plannedDayStartTime(
+                                dayMap.get(dayNumber),
+                                LocalTime.of(8, 30)
+                        ).minusMinutes(30);
+
                 items.add(
-                        accommodationItem(
+                        accommodationItemWithCategory(
                                 candidatePool.accommodation(),
                                 date,
+                                accommodationDepartureTime,
                                 null,
-                                null,
-                                "숙소에서 하루 일정을 시작합니다."
+                                lastDay ? "CHECK_OUT" : "DAY_START",
+                                lastDay
+                                        ? "숙소 체크아웃 시간에 맞춰 마지막 날 일정을 시작합니다."
+                                        : "숙소에서 하루 일정을 시작합니다."
                         )
                 );
             }
@@ -1165,15 +1412,43 @@ public class TripPlanService {
                 }
             }
 
+            if (firstDay && !lastDay) {
+                LocalTime checkInTime =
+                        parseAccommodationTime(
+                                candidatePool.accommodation().checkInTime(),
+                                LocalTime.of(15, 0)
+                        );
+
+                items.add(
+                        accommodationItemWithCategory(
+                                candidatePool.accommodation(),
+                                date,
+                                checkInTime,
+                                localSegmentMode(trip),
+                                "CHECK_IN",
+                                "숙소 체크인 시간에 맞춰 체크인합니다. 이후 일정이 있으면 다시 외출합니다."
+                        )
+                );
+
+                items.sort(
+                        Comparator.comparing(
+                                item -> item.startAt() == null
+                                        ? LocalDateTime.MAX
+                                        : item.startAt()
+                        )
+                );
+            }
+
             if (!lastDay) {
 
                 items.add(
-                        accommodationItem(
+                        accommodationItemWithCategory(
                                 candidatePool.accommodation(),
                                 date,
                                 null,
                                 localSegmentMode(trip),
-                                "현지 일정을 마치고 선택한 숙소로 복귀합니다."
+                                "NIGHT_RETURN",
+                                "저녁 식사와 현지 일정을 마친 뒤 선택한 숙소로 복귀합니다."
                         )
                 );
             }
@@ -1416,6 +1691,72 @@ public class TripPlanService {
                 flight.arrivalTime(),
                 null,
                 SegmentTransportMode.AIR,
+                reason
+        );
+    }
+
+    private LocalTime plannedDayStartTime(
+            TripPlanBedrockService.PlannedDay plannedDay,
+            LocalTime fallback
+    ) {
+        if (plannedDay == null || plannedDay.items() == null) {
+            return fallback;
+        }
+
+        return plannedDay.items()
+                .stream()
+                .map(TripPlanBedrockService.PlannedItem::startTime)
+                .filter(java.util.Objects::nonNull)
+                .min(LocalTime::compareTo)
+                .orElse(fallback);
+    }
+
+    private LocalTime parseAccommodationTime(
+            String value,
+            LocalTime fallback
+    ) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+
+        try {
+            return LocalTime.parse(value.trim());
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private TripPlanItemResponse accommodationItemWithCategory(
+            TripPlanSelectedAccommodation accommodation,
+            LocalDate date,
+            LocalTime startTime,
+            SegmentTransportMode mode,
+            String category,
+            String reason
+    ) {
+        LocalDateTime startAt =
+                startTime == null
+                        ? null
+                        : LocalDateTime.of(date, startTime);
+
+        LocalDateTime endAt =
+                "CHECK_IN".equals(category) && startAt != null
+                        ? startAt.plusMinutes(30)
+                        : null;
+
+        return new TripPlanItemResponse(
+                0,
+                TripPlanItemType.ACCOMMODATION,
+                accommodation.accommodationId(),
+                accommodation.providerId(),
+                accommodation.name(),
+                category,
+                accommodation.latitude(),
+                accommodation.longitude(),
+                startAt,
+                endAt,
+                null,
+                mode,
                 reason
         );
     }

@@ -9,6 +9,8 @@ public record TripPlanCandidatePool(
 
         TripPlanSelectedAccommodation accommodation,
 
+        MandatoryDestination mandatoryDestination,
+
         List<AttractionCandidate> attractions,
 
         List<RestaurantCandidate> restaurants,
@@ -18,6 +20,14 @@ public record TripPlanCandidatePool(
         List<DailyWeatherResponse> weather
 
 ) {
+
+    public record MandatoryDestination(
+            Long syntheticId,
+            String name,
+            Double latitude,
+            Double longitude
+    ) implements Serializable {
+    }
 
     public record AttractionCandidate(
 
@@ -30,7 +40,12 @@ public record TripPlanCandidatePool(
             Integer estimatedDriveMinutes,
             Double recommendationScore,
             String tags,
-            String recommendationReason
+            String recommendationReason,
+            boolean mandatory,
+            Double actualDistanceKmFromAccommodation,
+            Integer actualDriveMinutesFromAccommodation,
+            Double actualDistanceKmFromDestination,
+            Integer actualDriveMinutesFromDestination
 
     ) implements Serializable {
     }
@@ -48,7 +63,18 @@ public record TripPlanCandidatePool(
             List<String> matchedFoodPreferences,
             String summary,
             String tags,
-            String recommendationReason
+            String recommendationReason,
+            Double rating,
+            Integer reviewCount,
+            String businessHours,
+            Double qualityScore,
+            Double breakfastFitScore,
+            Double lunchFitScore,
+            Double dinnerFitScore,
+            Double actualDistanceKmFromAccommodation,
+            Integer actualDriveMinutesFromAccommodation,
+            Double actualDistanceKmFromDestination,
+            Integer actualDriveMinutesFromDestination
 
     ) implements Serializable {
     }
@@ -65,7 +91,15 @@ public record TripPlanCandidatePool(
             Double recommendationScore,
             String summary,
             String tags,
-            String recommendationReason
+            String recommendationReason,
+            Double rating,
+            Integer reviewCount,
+            String businessHours,
+            Double qualityScore,
+            Double actualDistanceKmFromAccommodation,
+            Integer actualDriveMinutesFromAccommodation,
+            Double actualDistanceKmFromDestination,
+            Integer actualDriveMinutesFromDestination
 
     ) implements Serializable {
     }
