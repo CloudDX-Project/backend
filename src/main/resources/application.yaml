@@ -61,6 +61,11 @@ external:
     api-key: ${AERODATABOX_API_KEY:}
     api-host: aerodatabox.p.rapidapi.com
 
+  kakao-mobility:
+    base-url: https://apis-navi.kakaomobility.com
+    rest-api-key: ${KAKAO_REST_API_KEY:}
+
+
   accommodation:
       base-url: https://apis.data.go.kr
 

@@ -18,3 +18,7 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       timeout: 2000ms
+external:
+  kakao-mobility:
+    base-url: https://apis-navi.kakaomobility.com
+    rest-api-key: ${KAKAO_REST_API_KEY:}

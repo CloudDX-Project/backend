@@ -71,6 +71,13 @@ public class TransportSegment {
     @Column(nullable = false)
     private Long cost;
 
+    @Column(length = 30)
+    private String routeProvider;
+
+    @Lob
+    @Column(columnDefinition = "LONGTEXT")
+    private String routePathJson;
+
     @Builder
     public TransportSegment(
             TripDay tripDay,
@@ -86,7 +93,9 @@ public class TransportSegment {
             LocalDateTime arrivalAt,
             Double distanceKm,
             Long durationMinutes,
-            Long cost
+            Long cost,
+            String routeProvider,
+            String routePathJson
     ) {
         this.tripDay = tripDay;
         this.sequence = sequence;
@@ -102,6 +111,8 @@ public class TransportSegment {
         this.distanceKm = distanceKm;
         this.durationMinutes = durationMinutes;
         this.cost = cost == null ? 0L : cost;
+        this.routeProvider = routeProvider;
+        this.routePathJson = routePathJson;
     }
 
     public void updateDetails(
@@ -128,6 +139,16 @@ public class TransportSegment {
 
         this.departureAt = departureAt;
         this.arrivalAt = arrivalAt;
+
+        /*
+         * 출발/도착 좌표나 교통수단이 변경되면
+         * 기존 경로 계산 결과는 더 이상 유효하지 않다.
+         */
+        this.distanceKm = null;
+        this.durationMinutes = null;
+        this.cost = 0L;
+        this.routeProvider = null;
+        this.routePathJson = null;
     }
 
     public void changeSequence(
@@ -142,12 +163,16 @@ public class TransportSegment {
             Long durationMinutes,
             Long cost,
             LocalDateTime departureAt,
-            LocalDateTime arrivalAt
+            LocalDateTime arrivalAt,
+            String routeProvider,
+            String routePathJson
     ) {
         this.distanceKm = distanceKm;
         this.durationMinutes = durationMinutes;
         this.cost = cost == null ? 0L : cost;
         this.departureAt = departureAt;
         this.arrivalAt = arrivalAt;
+        this.routeProvider = routeProvider;
+        this.routePathJson = routePathJson;
     }
 }

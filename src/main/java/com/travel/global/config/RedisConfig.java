@@ -129,6 +129,20 @@ public class RedisConfig {
         );
 
         /*
+         * Kakao Mobility 자동차 길찾기
+         *
+         * 같은 좌표 조합의 반복 호출을 줄여
+         * 무료 쿼터를 절약한다.
+         * 현재 교통 상황이 반영되므로 TTL은 짧게 유지한다.
+         */
+        cacheConfigurations.put(
+                "kakaoDrivingRoute",
+                defaultConfig.entryTtl(
+                        Duration.ofMinutes(15)
+                )
+        );
+
+        /*
          * 카페 추천 1차 후보군
          *
          * DB -> 거리/평점/카페특성 점수 계산 결과를
