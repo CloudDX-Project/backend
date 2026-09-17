@@ -10,6 +10,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public class TouristAttractionRepository {
@@ -155,6 +156,14 @@ public class TouristAttractionRepository {
                 params,
                 ROW_MAPPER
         );
+    }
+
+    public Optional<TouristAttractionData> findById(Long id) {
+        return jdbcTemplate.query(
+                SELECT_COLUMNS + " WHERE id = :id",
+                new MapSqlParameterSource("id", id),
+                ROW_MAPPER
+        ).stream().findFirst();
     }
 
     private boolean hasText(

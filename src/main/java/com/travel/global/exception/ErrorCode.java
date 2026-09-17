@@ -117,6 +117,11 @@ public enum ErrorCode {
 
 
     // Restaurant / Cafe
+    ATTRACTION_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "관광지를 찾을 수 없습니다."
+    ),
+
     RESTAURANT_NOT_FOUND(
             HttpStatus.NOT_FOUND,
             "식당 정보를 찾을 수 없습니다."

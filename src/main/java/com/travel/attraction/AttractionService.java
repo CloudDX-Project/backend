@@ -1,6 +1,9 @@
 package com.travel.attraction;
 
 import com.travel.attraction.data.TouristAttractionData;
+import com.travel.attraction.dto.AttractionDetailResponse;
+import com.travel.global.exception.BusinessException;
+import com.travel.global.exception.ErrorCode;
 import com.travel.attraction.dto.AttractionCandidate;
 import com.travel.attraction.dto.AttractionSearchRequest;
 import com.travel.attraction.dto.AttractionSearchResponse;
@@ -46,6 +49,16 @@ public class AttractionService {
                 attractions.size(),
                 attractions
         );
+    }
+
+    @Transactional(readOnly = true)
+    public AttractionDetailResponse getDetail(Long attractionsId) {
+        if (attractionsId == null || attractionsId <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+        return attractionRepository.findById(attractionsId)
+                .map(AttractionDetailResponse::from)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ATTRACTION_NOT_FOUND));
     }
 
     private AttractionCandidate toCandidate(

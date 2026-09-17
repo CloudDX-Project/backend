@@ -1,6 +1,12 @@
 package com.travel.attraction;
 
 import com.travel.attraction.dto.AttractionRecommendRequest;
+import com.travel.attraction.dto.AttractionDetailResponse;
+import com.travel.global.response.ApiResponse;
+import com.travel.global.exception.BusinessException;
+import com.travel.global.exception.ErrorCode;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import com.travel.attraction.dto.AttractionRecommendResponse;
 import com.travel.attraction.dto.AttractionSearchRequest;
 import com.travel.attraction.dto.AttractionSearchResponse;
@@ -32,6 +38,17 @@ public class AttractionController {
                 attractionRecommendationService;
     }
 
+
+    @GetMapping("/{attractionsId}")
+    public ApiResponse<AttractionDetailResponse> getDetail(
+            @PathVariable("attractionsId") String attractionsId
+    ) {
+        try {
+            return ApiResponse.success(attractionService.getDetail(Long.parseLong(attractionsId)));
+        } catch (NumberFormatException exception) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+    }
 
     @PostMapping("/search")
     public AttractionSearchResponse search(
