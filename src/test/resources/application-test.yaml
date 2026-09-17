@@ -27,8 +27,22 @@ jwt:
   refresh-cookie-same-site: Lax
 
 app:
+  runtime-role: api
+
   cache:
     provider: simple
+
+aws:
+  bedrock:
+    region: ap-northeast-2
+    model-id: apac.amazon.nova-lite-v1:0
+  sqs:
+    region: ap-northeast-2
+    trip-plan:
+      queue-url: ""
+      wait-time-seconds: 1
+      visibility-timeout-seconds: 30
+      poll-delay-ms: 1000
 
 weather:
   kma:

@@ -6,3 +6,14 @@ metadata:
 data:
   REDIS_HOST: "ai-travel-redis.0uh0f2.0001.apn2.cache.amazonaws.com"
   REDIS_PORT: "6379"
+  AWS_REGION: "ap-northeast-2"
+  AWS_SQS_REGION: "ap-northeast-2"
+  AWS_BEDROCK_REGION: "ap-northeast-2"
+  BEDROCK_MODEL_ID: "apac.amazon.nova-lite-v1:0"
+
+  # 실제 SQS Queue URL로 교체한 뒤 배포한다.
+  # 예: https://sqs.ap-northeast-2.amazonaws.com/123456789012/ai-travel-plan
+  TRIP_PLAN_QUEUE_URL: "https://sqs.ap-northeast-2.amazonaws.com/782913119640/ai-travel-ai-jobs"
+  TRIP_PLAN_QUEUE_WAIT_TIME_SECONDS: "20"
+  TRIP_PLAN_QUEUE_VISIBILITY_TIMEOUT_SECONDS: "900"
+  TRIP_PLAN_QUEUE_POLL_DELAY_MS: "1000"

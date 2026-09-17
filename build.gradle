@@ -50,7 +50,10 @@ dependencies {
     // AWS Bedrock
     implementation platform('software.amazon.awssdk:bom:2.54.2')
     implementation 'software.amazon.awssdk:bedrockruntime'
+    implementation 'software.amazon.awssdk:sqs'
     implementation 'software.amazon.awssdk:auth'
+    implementation platform('software.amazon.awssdk:bom:2.54.2')
+    implementation 'software.amazon.awssdk:sts'
     //test
     testRuntimeOnly 'com.h2database:h2'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'

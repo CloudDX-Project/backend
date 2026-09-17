@@ -85,6 +85,16 @@ public enum ErrorCode {
             "선택한 항공편의 공항 도착 마감을 지킬 수 없습니다. 항공편 또는 숙소를 변경해주세요."
     ),
 
+    TRIP_PLAN_REQUEST_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "요청된 여행 일정 생성 작업을 찾을 수 없습니다."
+    ),
+
+    TRIP_PLAN_QUEUE_UNAVAILABLE(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "여행 일정 생성 요청을 전달할 수 없습니다. 잠시 후 다시 시도해주세요."
+    ),
+
     INVALID_TRIP_PERIOD(
             HttpStatus.BAD_REQUEST,
             "종료일은 출발일보다 빠를 수 없습니다."

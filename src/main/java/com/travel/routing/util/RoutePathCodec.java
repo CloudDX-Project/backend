@@ -1,16 +1,16 @@
 package com.travel.routing.util;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.travel.routing.dto.RoutePoint;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
 
 public final class RoutePathCodec {
 
-    private static final ObjectMapper OBJECT_MAPPER =
-            new ObjectMapper();
+    private static final JsonMapper JSON_MAPPER =
+            JsonMapper.builder().build();
 
     private static final TypeReference<List<RoutePoint>> ROUTE_POINT_LIST_TYPE =
             new TypeReference<>() {
@@ -27,8 +27,8 @@ public final class RoutePathCodec {
         }
 
         try {
-            return OBJECT_MAPPER.writeValueAsString(points);
-        } catch (JsonProcessingException e) {
+            return JSON_MAPPER.writeValueAsString(points);
+        } catch (JacksonException e) {
             throw new IllegalStateException(
                     "이동 경로 좌표를 JSON으로 변환하지 못했습니다.",
                     e
@@ -44,11 +44,11 @@ public final class RoutePathCodec {
         }
 
         try {
-            return OBJECT_MAPPER.readValue(
+            return JSON_MAPPER.readValue(
                     json,
                     ROUTE_POINT_LIST_TYPE
             );
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             return List.of();
         }
     }

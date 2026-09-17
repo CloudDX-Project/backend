@@ -17,6 +17,8 @@ spec:
         app: travel-api
 
     spec:
+      serviceAccountName: travel-api-sa
+
       containers:
         - name: travel-api
           image: 782913119640.dkr.ecr.ap-northeast-2.amazonaws.com/ai-travel-backend:latest
@@ -25,6 +27,15 @@ spec:
 
           ports:
             - containerPort: 8080
+
+          env:
+            - name: APP_RUNTIME_ROLE
+              value: "api"
+            - name: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE
+              value: "5"
+
+            - name: SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE
+              value: "1"
 
           envFrom:
             - configMapRef:

@@ -31,6 +31,8 @@ springdoc:
   show-actuator: false
 
 app:
+  runtime-role: ${APP_RUNTIME_ROLE:api}
+
   cache:
     provider: ${CACHE_PROVIDER:simple}
 
@@ -57,7 +59,15 @@ weather:
 aws:
   bedrock:
     region: ${AWS_BEDROCK_REGION:ap-northeast-2}
-    model-id: ${BEDROCK_MODEL_ID:global.amazon.nova-2-lite-v1:0}
+    model-id: ${BEDROCK_MODEL_ID:apac.amazon.nova-lite-v1:0}
+
+  sqs:
+    region: ${AWS_SQS_REGION:${AWS_REGION:ap-northeast-2}}
+    trip-plan:
+      queue-url: ${TRIP_PLAN_QUEUE_URL:}
+      wait-time-seconds: ${TRIP_PLAN_QUEUE_WAIT_TIME_SECONDS:20}
+      visibility-timeout-seconds: ${TRIP_PLAN_QUEUE_VISIBILITY_TIMEOUT_SECONDS:900}
+      poll-delay-ms: ${TRIP_PLAN_QUEUE_POLL_DELAY_MS:1000}
 
 external:
   aerodatabox:

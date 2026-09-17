@@ -25,6 +25,9 @@ public class BedrockClient {
     @Value("${aws.bedrock.model-id}")
     private String modelId;
 
+    @Value("${app.runtime-role:api}")
+    private String runtimeRole;
+
     /*
      * 기존 관광지 / 식당 / 카페 추천 로직은
      * 이 메서드를 그대로 사용한다.
@@ -50,6 +53,12 @@ public class BedrockClient {
             int maxTokens,
             float temperature
     ) {
+
+        if (!"worker".equalsIgnoreCase(runtimeRole)) {
+            throw new IllegalStateException(
+                    "Bedrock 호출은 APP_RUNTIME_ROLE=worker 프로세스에서만 허용됩니다."
+            );
+        }
 
         Message message =
                 Message.builder()
