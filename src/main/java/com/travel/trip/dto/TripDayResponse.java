@@ -14,7 +14,9 @@ public record TripDayResponse(
 
         LocalDate date,
 
-        List<TripPlanItemResponse> items
+        List<TripPlanItemResponse> items,
+
+        List<TransportSegmentResponse> transportSegments
 
 ) {
 
@@ -28,6 +30,11 @@ public record TripDayResponse(
                 tripDay.getPlanItems()
                         .stream()
                         .map(TripPlanItemResponse::from)
+                        .toList(),
+                tripDay.getTransportSegments()
+                        .stream()
+                        .sorted(java.util.Comparator.comparing(segment -> segment.getSequence()))
+                        .map(TransportSegmentResponse::from)
                         .toList()
         );
     }

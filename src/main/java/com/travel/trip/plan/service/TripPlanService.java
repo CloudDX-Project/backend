@@ -4,6 +4,7 @@ import com.travel.flight.dto.FlightCandidate;
 import com.travel.global.exception.BusinessException;
 import com.travel.global.exception.ErrorCode;
 import com.travel.routing.dto.DrivingRouteResult;
+import com.travel.routing.dto.RoutePoint;
 import com.travel.routing.service.RoutingService;
 import com.travel.routing.util.RoutePathCodec;
 import com.travel.trip.dto.TransportSegmentResponse;
@@ -44,14 +45,14 @@ import java.util.Map;
 @Transactional(readOnly = true)
 public class TripPlanService {
 
-    private static final int AIRPORT_BUFFER_MINUTES =
-            90;
+    private static final int AIRPORT_BUFFER_MINUTES = FlightTimePolicy.AIRPORT_BUFFER_MINUTES;
 
     private final TripRepository tripRepository;
     private final TripPlanItemRepository tripPlanItemRepository;
     private final TransportSegmentRepository transportSegmentRepository;
     private final TripPlanCandidateService candidateService;
     private final TripPlanBedrockService bedrockService;
+    private final TripPlanSchedulePostProcessor schedulePostProcessor;
     private final RoutingService routingService;
 
     public TripPlanService(
@@ -60,6 +61,7 @@ public class TripPlanService {
             TransportSegmentRepository transportSegmentRepository,
             TripPlanCandidateService candidateService,
             TripPlanBedrockService bedrockService,
+            TripPlanSchedulePostProcessor schedulePostProcessor,
             RoutingService routingService
     ) {
         this.tripRepository =
@@ -72,6 +74,7 @@ public class TripPlanService {
                 candidateService;
         this.bedrockService =
                 bedrockService;
+        this.schedulePostProcessor = schedulePostProcessor;
         this.routingService =
                 routingService;
     }
@@ -81,7 +84,10 @@ public class TripPlanService {
             Long userId,
             Long tripId
     ) {
+        return routingService.withSnapshot(() -> createPlanWithRouteSnapshot(userId, tripId));
+    }
 
+    private TripPlanResponse createPlanWithRouteSnapshot(Long userId, Long tripId) {
         Trip trip =
                 tripRepository.findByIdAndUserId(
                                 tripId,
@@ -138,6 +144,15 @@ public class TripPlanService {
                 trip,
                 days
         );
+
+        days = schedulePostProcessor.repairMealSlots(trip, candidatePool, days);
+        days = schedulePostProcessor.anchorFirstDayCheckIn(trip, candidatePool, days);
+        days = reflowPlanTimesWithActualRoutes(trip, days);
+        days = enforceReturnFlightDeadline(trip, days, false);
+        days = schedulePostProcessor.fillLastDayByActualSlack(trip, candidatePool, days);
+        days = reflowPlanTimesWithActualRoutes(trip, days);
+        days = enforceReturnFlightDeadline(trip, days, true);
+        days = schedulePostProcessor.normalizeMealRoleAfterRouting(days);
 
         persistPlanItems(
                 trip,
@@ -301,78 +316,92 @@ public class TripPlanService {
     }
 
     private long actualTravelMinutesForTimeline(
-            Trip trip,
-            TripPlanItemResponse previous,
-            TripPlanItemResponse current
+            Trip trip, TripPlanItemResponse previous, TripPlanItemResponse current
     ) {
         TripRentalSelection rental = trip.getSelectedRental();
-
-        if (trip.getLocalTransportMode() == LocalTransportMode.RENTAL_CAR
-                && rental != null
-                && isArrivalAirport(previous)) {
-            long routeMinutes = routeMinutes(
-                    rental.getLatitude(),
-                    rental.getLongitude(),
-                    current.latitude(),
-                    current.longitude()
-            );
-            return Math.max(0, rental.getEstimatedShuttleMinutes()) + routeMinutes;
+        SegmentTransportMode mode = localSegmentMode(trip);
+        if (trip.getLocalTransportMode() == LocalTransportMode.RENTAL_CAR && rental != null) {
+            if (isArrivalAirport(previous)) {
+                return Math.max(0, rental.getEstimatedShuttleMinutes())
+                        + FlightTimePolicy.RENTAL_PICKUP_MINUTES
+                        + timelineRouteMinutes(mode, rental.getLatitude(), rental.getLongitude(),
+                                current.latitude(), current.longitude());
+            }
+            if (isReturnDepartureAirport(current)) {
+                return timelineRouteMinutes(mode, previous.latitude(), previous.longitude(),
+                                rental.getLatitude(), rental.getLongitude())
+                        + FlightTimePolicy.RENTAL_RETURN_MINUTES
+                        + Math.max(0, rental.getEstimatedShuttleMinutes());
+            }
         }
-
-        if (trip.getLocalTransportMode() == LocalTransportMode.RENTAL_CAR
-                && rental != null
-                && isReturnDepartureAirport(current)) {
-            long routeMinutes = routeMinutes(
-                    previous.latitude(),
-                    previous.longitude(),
-                    rental.getLatitude(),
-                    rental.getLongitude()
-            );
-            return routeMinutes + Math.max(0, rental.getEstimatedShuttleMinutes());
-        }
-
-        return routeMinutes(
-                previous.latitude(),
-                previous.longitude(),
-                current.latitude(),
-                current.longitude()
-        );
+        return timelineRouteMinutes(mode, previous.latitude(), previous.longitude(),
+                current.latitude(), current.longitude());
     }
 
-    private long routeMinutes(
-            Double originLatitude,
-            Double originLongitude,
-            Double destinationLatitude,
-            Double destinationLongitude
-    ) {
-        if (originLatitude == null
-                || originLongitude == null
-                || destinationLatitude == null
-                || destinationLongitude == null) {
-            return 0L;
-        }
+    private long timelineRouteMinutes(SegmentTransportMode mode, Double originLatitude,
+                                      Double originLongitude, Double destinationLatitude, Double destinationLongitude) {
+        // 시간표도 저장되는 이동 구간과 동일한 계산식/조회 결과를 쓴다.
+        TransportSegment segment = createRoutedSegment(null, 0, mode, "출발", "도착",
+                originLatitude, originLongitude, destinationLatitude, destinationLongitude, null, null);
+        if (segment == null) throw new BusinessException(ErrorCode.TRIP_PLAN_AIRPORT_UNREACHABLE);
+        return segment.getDurationMinutes();
+    }
 
-        try {
-            DrivingRouteResult route = routingService.findDrivingRoute(
-                    originLatitude,
-                    originLongitude,
-                    destinationLatitude,
-                    destinationLongitude
-            );
-            return Math.max(
-                    1L,
-                    (long) Math.ceil(route.durationSeconds() / 60.0)
-            );
-        } catch (RuntimeException e) {
-            double straightDistanceKm = haversineKm(
-                    originLatitude,
-                    originLongitude,
-                    destinationLatitude,
-                    destinationLongitude
-            );
-            double roadKm = straightDistanceKm * 1.25;
-            return Math.max(1L, Math.round(roadKm / 35.0 * 60.0));
+    /** 항공편은 이동시키지 않는다. 마감 초과 시 선택 일정을 뒤에서부터 제거한다. */
+    private List<TripPlanDayResponse> enforceReturnFlightDeadline(
+            Trip trip, List<TripPlanDayResponse> days, boolean useActualArrival
+    ) {
+        List<TripPlanDayResponse> result = new ArrayList<>();
+        for (TripPlanDayResponse day : days) {
+            List<TripPlanItemResponse> items = new ArrayList<>(day.items());
+            int airportIndex = -1;
+            for (int i = 0; i < items.size(); i++) {
+                if (isReturnDepartureAirport(items.get(i))) { airportIndex = i; break; }
+            }
+            if (airportIndex < 0) { result.add(day); continue; }
+            TripPlanItemResponse airport = items.get(airportIndex);
+            LocalDateTime deadline = FlightTimePolicy.airportDeadline(airport.endAt());
+            LocalDateTime arrivalAt;
+            while (true) {
+                if (airportIndex == 0) throw new BusinessException(ErrorCode.TRIP_PLAN_AIRPORT_UNREACHABLE);
+                TripPlanItemResponse previous = items.get(airportIndex - 1);
+                LocalDateTime previousEnd = previous.endAt() != null ? previous.endAt() : previous.startAt();
+                if (previousEnd == null) throw new BusinessException(ErrorCode.TRIP_PLAN_AIRPORT_UNREACHABLE);
+                long transferMinutes = actualTravelMinutesForTimeline(trip, previous, airport);
+                arrivalAt = previousEnd.plusMinutes(transferMinutes);
+                if (FlightTimePolicy.canReachAirport(previousEnd, transferMinutes, airport.endAt())) break;
+
+                int removable = -1;
+                for (int i = airportIndex - 1; i >= 0; i--) {
+                    TripPlanItemType type = items.get(i).type();
+                    if (type == TripPlanItemType.ATTRACTION || type == TripPlanItemType.CAFE
+                            || type == TripPlanItemType.RESTAURANT) { removable = i; break; }
+                }
+                if (removable >= 0) {
+                    log.info("공항 마감 초과 일정 제외: day={}, place={}, deadline={}",
+                            day.dayNumber(), items.get(removable).name(), deadline);
+                    items.remove(removable);
+                    airportIndex--;
+                    continue;
+                }
+                // 체크아웃은 퇴실 마감이므로 이른 항공편에는 숙소에서 먼저 출발할 수 있다.
+                if ("CHECK_OUT".equals(previous.category())) {
+                    LocalDateTime earlyCheckout = deadline.minusMinutes(transferMinutes);
+                    if (!earlyCheckout.toLocalDate().equals(day.date())) {
+                        throw new BusinessException(ErrorCode.TRIP_PLAN_AIRPORT_UNREACHABLE);
+                    }
+                    items.set(airportIndex - 1, copyWithTimes(previous, earlyCheckout, null, 0));
+                    arrivalAt = deadline;
+                    break;
+                }
+                throw new BusinessException(ErrorCode.TRIP_PLAN_AIRPORT_UNREACHABLE);
+            }
+            LocalDateTime airportStart = useActualArrival ? arrivalAt : deadline;
+            items.set(airportIndex, copyWithTimes(airport, airportStart, airport.endAt(),
+                    (int) ChronoUnit.MINUTES.between(airportStart, airport.endAt())));
+            result.add(new TripPlanDayResponse(day.dayNumber(), day.date(), applyOrders(items), List.of()));
         }
+        return result;
     }
 
     private int resolveStayMinutes(TripPlanItemResponse item) {
@@ -636,9 +665,9 @@ public class TripPlanService {
                                 && rental != null
                 ) {
                     LocalDateTime shuttleDepartureAt =
-                            previous.startAt() != null
-                                    ? previous.startAt()
-                                    : previous.endAt();
+                            previous.endAt() != null
+                                    ? previous.endAt()
+                                    : previous.startAt();
 
                     LocalDateTime shuttleArrivalAt =
                             shuttleDepartureAt == null
@@ -677,7 +706,8 @@ public class TripPlanService {
                                     rental.getLongitude(),
                                     current.latitude(),
                                     current.longitude(),
-                                    shuttleArrivalAt,
+                                    shuttleArrivalAt == null ? null
+                                            : shuttleArrivalAt.plusMinutes(FlightTimePolicy.RENTAL_PICKUP_MINUTES),
                                     current.startAt()
                             );
 
@@ -730,10 +760,12 @@ public class TripPlanService {
                         newSegments.add(localRoute);
                     }
 
+                    LocalDateTime shuttleDepartureAt = rentalArrivalAt == null ? null
+                            : rentalArrivalAt.plusMinutes(FlightTimePolicy.RENTAL_RETURN_MINUTES);
                     LocalDateTime shuttleArrivalAt =
-                            rentalArrivalAt == null
+                            shuttleDepartureAt == null
                                     ? current.startAt()
-                                    : rentalArrivalAt.plusMinutes(
+                                    : shuttleDepartureAt.plusMinutes(
                                     rental.getEstimatedShuttleMinutes()
                             );
 
@@ -748,7 +780,7 @@ public class TripPlanService {
                                     rental.getLongitude(),
                                     current.latitude(),
                                     current.longitude(),
-                                    rentalArrivalAt,
+                                    shuttleDepartureAt,
                                     shuttleArrivalAt,
                                     rental.getEstimatedShuttleMinutes()
                             );
@@ -978,7 +1010,9 @@ public class TripPlanService {
                 .durationMinutes(durationMinutes)
                 .cost(cost)
                 .routeProvider("ESTIMATED")
-                .routePathJson(null)
+                .routePathJson(RoutePathCodec.encode(List.of(
+                        new RoutePoint(departureLatitude, departureLongitude),
+                        new RoutePoint(arrivalLatitude, arrivalLongitude))))
                 .build();
     }
 
@@ -1043,6 +1077,13 @@ public class TripPlanService {
             }
         }
 
+        if (routePathJson == null && departureLatitude != null && departureLongitude != null
+                && arrivalLatitude != null && arrivalLongitude != null) {
+            routeProvider = "FIXED";
+            routePathJson = RoutePathCodec.encode(List.of(
+                    new RoutePoint(departureLatitude, departureLongitude),
+                    new RoutePoint(arrivalLatitude, arrivalLongitude)));
+        }
         return TransportSegment.builder()
                 .tripDay(tripDay)
                 .sequence(sequence)
@@ -1199,7 +1240,7 @@ public class TripPlanService {
         return switch (mode) {
             case WALK -> 4.5;
             case PUBLIC_TRANSIT, SHUTTLE -> 30.0;
-            case RENTAL_CAR, OWN_CAR, TAXI -> 45.0;
+            case RENTAL_CAR, OWN_CAR, TAXI -> 35.0;
             case KTX, SRT -> 180.0;
             case EXPRESS_BUS -> 70.0;
             case AIR -> 500.0;
@@ -1431,11 +1472,10 @@ public class TripPlanService {
                 );
 
                 items.sort(
-                        Comparator.comparing(
-                                item -> item.startAt() == null
-                                        ? LocalDateTime.MAX
-                                        : item.startAt()
-                        )
+                        Comparator.comparingInt((TripPlanItemResponse item) ->
+                                        item.type() == TripPlanItemType.AIRPORT || item.type() == TripPlanItemType.FLIGHT
+                                                || item.type() == TripPlanItemType.DEPARTURE ? 0 : 1)
+                                .thenComparing(item -> item.startAt() == null ? LocalDateTime.MAX : item.startAt())
                 );
             }
 
@@ -1521,9 +1561,7 @@ public class TripPlanService {
                                 AIRPORT_BUFFER_MINUTES
                         );
 
-        if (airportTargetTime.isBefore(tripStart)) {
-            airportTargetTime = tripStart;
-        }
+        // Trip.startTime은 항공 검색 하한이다. 탑승 준비 시작을 이륙 시각으로 잘라내지 않는다.
 
         AirportInfo departureAirport =
                 airportInfo(
@@ -1571,10 +1609,10 @@ public class TripPlanService {
                         arrivalAirport.latitude(),
                         arrivalAirport.longitude(),
                         outboundFlight.arrivalTime(),
+                        outboundFlight.arrivalTime().plusMinutes(FlightTimePolicy.ARRIVAL_PROCESSING_MINUTES),
+                        FlightTimePolicy.ARRIVAL_PROCESSING_MINUTES,
                         null,
-                        null,
-                        null,
-                        "목적지 공항에 도착했습니다."
+                        "목적지 공항 도착 후 하차·수하물 수령에 기본 30분을 확보합니다."
                 )
         );
     }
@@ -1620,7 +1658,7 @@ public class TripPlanService {
                             returnFlight.departureTime(),
                             null,
                             localSegmentMode(trip),
-                            "오는 편 탑승을 위해 공항으로 이동합니다."
+                            "오는 편 출발 90분 전까지 공항에 도착하여 탑승을 준비합니다."
                     )
             );
 

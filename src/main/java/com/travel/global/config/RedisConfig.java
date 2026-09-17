@@ -229,6 +229,7 @@ public class RedisConfig {
                 "weatherShort",
                 "weatherMid",
                 "flightSchedule",
+                "kakaoDrivingRoute",
                 "cafeCandidates",
                 "tripPlanAttractionCandidates",
                 "tripPlanRestaurantCandidates",

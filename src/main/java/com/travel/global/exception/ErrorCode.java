@@ -80,6 +80,11 @@ public enum ErrorCode {
             "선택한 렌터카 위치 또는 셔틀 소요시간 정보가 올바르지 않습니다."
     ),
 
+    TRIP_PLAN_AIRPORT_UNREACHABLE(
+            HttpStatus.BAD_REQUEST,
+            "선택한 항공편의 공항 도착 마감을 지킬 수 없습니다. 항공편 또는 숙소를 변경해주세요."
+    ),
+
     INVALID_TRIP_PERIOD(
             HttpStatus.BAD_REQUEST,
             "종료일은 출발일보다 빠를 수 없습니다."
