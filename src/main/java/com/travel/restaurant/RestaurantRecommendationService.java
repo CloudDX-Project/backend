@@ -382,35 +382,35 @@ public class RestaurantRecommendationService {
         /*
          * FOOD 여행이면:
          *
-         * 평점 55%
-         * 거리 20%
+         * 평점/리뷰 Bayesian 품질 65%
+         * 거리 10%
          * 제주 로컬성 25%
          *
          * 일반 여행이면:
          *
-         * 평점 50%
-         * 거리 40%
-         * 제주 로컬성 10%
+         * 평점/리뷰 Bayesian 품질 65%
+         * 거리 15%
+         * 제주 로컬성 20%
          */
         double baseScore;
 
         if (request.foodFocused()) {
 
             baseScore =
-                    ratingScore * 0.55
+                    ratingScore * 0.65
                             +
-                            distanceScore * 0.20
+                            distanceScore * 0.10
                             +
                             localScore * 0.25;
 
         } else {
 
             baseScore =
-                    ratingScore * 0.50
+                    ratingScore * 0.65
                             +
-                            distanceScore * 0.40
+                            distanceScore * 0.15
                             +
-                            localScore * 0.10;
+                            localScore * 0.20;
         }
 
         return new ScoredRestaurant(

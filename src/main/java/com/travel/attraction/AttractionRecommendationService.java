@@ -60,22 +60,25 @@ public class AttractionRecommendationService {
     /*
      * 1차 정량 점수
      *
-     * 위치 35%
-     * 사용자 선호 40%
-     * 날씨 15%
-     * 여행 pace 10%
+     * 위치 15%
+     * 사용자 선호 50%
+     * 날씨 20%
+     * 여행 pace 15%
+     *
+     * 실제 도로 이동시간은 최종 TripPlan 후보 단계에서 Kakao Mobility로 보강한다.
+     * 여기서는 가까운 장소가 품질/선호보다 과도하게 우선되지 않도록 거리 비중을 낮춘다.
      */
     private static final double DISTANCE_WEIGHT =
-            0.35;
-
-    private static final double PREFERENCE_WEIGHT =
-            0.40;
-
-    private static final double WEATHER_WEIGHT =
             0.15;
 
+    private static final double PREFERENCE_WEIGHT =
+            0.50;
+
+    private static final double WEATHER_WEIGHT =
+            0.20;
+
     private static final double PACE_WEIGHT =
-            0.10;
+            0.15;
 
     /*
      * 최종 점수

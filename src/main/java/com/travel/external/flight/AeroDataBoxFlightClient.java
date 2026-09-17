@@ -44,7 +44,13 @@ public class AeroDataBoxFlightClient {
      * 요청 사이에 간격을 둔다.
      */
     private static final long MIN_REQUEST_INTERVAL_MS =
-            1200L;
+            2500L;
+
+    private static final int MAX_RATE_LIMIT_RETRIES =
+            1;
+
+    private static final long DEFAULT_RATE_LIMIT_RETRY_DELAY_MS =
+            3000L;
 
 
     private long lastRequestTime =
@@ -213,354 +219,447 @@ public class AeroDataBoxFlightClient {
                 );
 
 
-        try {
-
-            /*
-             * AeroDataBox / RapidAPI 연속 호출 방지
-             */
-            waitForRateLimit();
+        int rateLimitRetryCount =
+                0;
 
 
-            AeroDataBoxResponse response =
+        while (
+                true
+        ) {
 
-                    restClient
-                            .get()
+            try {
 
-                            .uri(
-                                    uriBuilder ->
-                                            uriBuilder
+                /*
+                 * AeroDataBox / RapidAPI 연속 호출 방지
+                 */
+                waitForRateLimit();
 
-                                                    .path(
-                                                            "/flights/airports/iata/{airport}/{fromLocal}/{toLocal}"
-                                                    )
 
-                                                    .queryParam(
-                                                            "withLeg",
-                                                            true
-                                                    )
+                AeroDataBoxResponse response =
 
-                                                    .queryParam(
-                                                            "direction",
-                                                            "Departure"
-                                                    )
+                        restClient
+                                .get()
 
-                                                    .queryParam(
-                                                            "withCancelled",
-                                                            false
-                                                    )
+                                .uri(
+                                        uriBuilder ->
+                                                uriBuilder
 
-                                                    .queryParam(
-                                                            "withCodeshared",
-                                                            false
-                                                    )
+                                                        .path(
+                                                                "/flights/airports/iata/{airport}/{fromLocal}/{toLocal}"
+                                                        )
 
-                                                    .queryParam(
-                                                            "withCargo",
-                                                            false
-                                                    )
+                                                        .queryParam(
+                                                                "withLeg",
+                                                                true
+                                                        )
 
-                                                    .queryParam(
-                                                            "withPrivate",
-                                                            false
-                                                    )
+                                                        .queryParam(
+                                                                "direction",
+                                                                "Departure"
+                                                        )
 
-                                                    .queryParam(
-                                                            "withLocation",
-                                                            false
-                                                    )
+                                                        .queryParam(
+                                                                "withCancelled",
+                                                                false
+                                                        )
 
-                                                    .build(
-                                                            departureAirport,
-                                                            fromLocal,
-                                                            toLocal
-                                                    )
-                            )
+                                                        .queryParam(
+                                                                "withCodeshared",
+                                                                false
+                                                        )
 
-                            .header(
-                                    "X-RapidAPI-Key",
-                                    apiKey
-                            )
+                                                        .queryParam(
+                                                                "withCargo",
+                                                                false
+                                                        )
 
-                            .header(
-                                    "X-RapidAPI-Host",
-                                    apiHost
-                            )
+                                                        .queryParam(
+                                                                "withPrivate",
+                                                                false
+                                                        )
 
-                            .retrieve()
+                                                        .queryParam(
+                                                                "withLocation",
+                                                                false
+                                                        )
 
-                            .body(
-                                    AeroDataBoxResponse.class
+                                                        .build(
+                                                                departureAirport,
+                                                                fromLocal,
+                                                                toLocal
+                                                        )
+                                )
+
+                                .header(
+                                        "X-RapidAPI-Key",
+                                        apiKey
+                                )
+
+                                .header(
+                                        "X-RapidAPI-Host",
+                                        apiHost
+                                )
+
+                                .retrieve()
+
+                                .body(
+                                        AeroDataBoxResponse.class
+                                );
+
+
+                if (
+                        response == null
+                                || response.departures() == null
+                ) {
+
+                    return new ArrayList<>();
+                }
+
+
+                /*
+                 * AeroDataBox는
+                 * 출발공항의 전체 출발 항공편을 반환한다.
+                 *
+                 * 여기에서
+                 *
+                 * 1. 화물기 제외
+                 * 2. 국내선만
+                 * 3. 원하는 도착공항만
+                 *
+                 * 필터링한다.
+                 */
+                List<FlightCandidate> candidates =
+
+                        response
+                                .departures()
+                                .stream()
+
+                                /*
+                                 * 화물기 제외
+                                 */
+                                .filter(
+                                        flight ->
+                                                !Boolean.TRUE.equals(
+                                                        flight.isCargo()
+                                                )
+                                )
+
+                                /*
+                                 * 도착공항 데이터 존재 여부
+                                 */
+                                .filter(
+                                        flight ->
+                                                flight.arrival() != null
+                                                        && flight
+                                                        .arrival()
+                                                        .airport() != null
+                                )
+
+                                /*
+                                 * 국내선만
+                                 */
+                                .filter(
+                                        flight ->
+                                                "kr".equalsIgnoreCase(
+                                                        flight
+                                                                .arrival()
+                                                                .airport()
+                                                                .countryCode()
+                                                )
+                                )
+
+                                /*
+                                 * 원하는 목적공항만
+                                 */
+                                .filter(
+                                        flight ->
+                                                arrivalAirport
+                                                        .equalsIgnoreCase(
+                                                                flight
+                                                                        .arrival()
+                                                                        .airport()
+                                                                        .iata()
+                                                        )
+                                )
+
+                                /*
+                                 * FlightCandidate DTO 변환
+                                 */
+                                .map(
+                                        flight ->
+                                                convert(
+
+                                                        flight,
+
+                                                        departureAirport,
+
+                                                        arrivalAirport,
+
+                                                        peopleCount,
+
+                                                        direction
+                                                )
+                                )
+
+                                .filter(
+                                        Objects::nonNull
+                                )
+
+                                /*
+                                 * 빠른 출발순
+                                 */
+                                .sorted(
+                                        Comparator.comparing(
+                                                FlightCandidate
+                                                        ::departureTime
+                                        )
+                                )
+
+                                .toList();
+
+
+                /*
+                 * Redis JDK 직렬화에서도
+                 * 명확한 ArrayList 형태로 저장
+                 */
+                return new ArrayList<>(
+                        candidates
+                );
+
+
+            } catch (
+                    RestClientResponseException e
+            ) {
+
+                int status =
+                        e.getStatusCode()
+                                .value();
+
+
+                /*
+                 * 해당 날짜 / 시간에 항공편 없음
+                 */
+                if (
+                        status == 404
+                ) {
+
+                    return new ArrayList<>();
+                }
+
+
+                /*
+                 * RapidAPI 인증 실패
+                 */
+                if (
+                        status == 401
+                                || status == 403
+                ) {
+
+                    throw new IllegalStateException(
+                            "AeroDataBox 인증 또는 RapidAPI 구독 정보를 확인해주세요.",
+                            e
+                    );
+                }
+
+
+                /*
+                 * 호출 제한
+                 *
+                 * 한 방향 조회도 12시간 단위로 최대 2회 호출되므로
+                 * 두 번째 chunk가 순간 rate limit에 걸릴 수 있다.
+                 *
+                 * 429일 때만 Retry-After를 우선 존중하고,
+                 * 헤더가 없으면 3초 대기 후 딱 1회만 재시도한다.
+                 */
+                if (
+                        status == 429
+                ) {
+
+                    HttpHeaders headers =
+                            e.getResponseHeaders();
+
+
+                    String retryAfter =
+                            firstHeader(
+                                    headers,
+                                    HttpHeaders.RETRY_AFTER
                             );
 
 
-            if (
-                    response == null
-                            || response.departures() == null
-            ) {
-
-                return new ArrayList<>();
-            }
+                    String rateRemaining =
+                            firstHeader(
+                                    headers,
+                                    "x-ratelimit-remaining"
+                            );
 
 
-            /*
-             * AeroDataBox는
-             * 출발공항의 전체 출발 항공편을 반환한다.
-             *
-             * 여기에서
-             *
-             * 1. 화물기 제외
-             * 2. 국내선만
-             * 3. 원하는 도착공항만
-             *
-             * 필터링한다.
-             */
-            List<FlightCandidate> candidates =
-
-                    response
-                            .departures()
-                            .stream()
-
-                            /*
-                             * 화물기 제외
-                             */
-                            .filter(
-                                    flight ->
-                                            !Boolean.TRUE.equals(
-                                                    flight.isCargo()
-                                            )
-                            )
-
-                            /*
-                             * 도착공항 데이터 존재 여부
-                             */
-                            .filter(
-                                    flight ->
-                                            flight.arrival() != null
-                                                    && flight
-                                                    .arrival()
-                                                    .airport() != null
-                            )
-
-                            /*
-                             * 국내선만
-                             */
-                            .filter(
-                                    flight ->
-                                            "kr".equalsIgnoreCase(
-                                                    flight
-                                                            .arrival()
-                                                            .airport()
-                                                            .countryCode()
-                                            )
-                            )
-
-                            /*
-                             * 원하는 목적공항만
-                             */
-                            .filter(
-                                    flight ->
-                                            arrivalAirport
-                                                    .equalsIgnoreCase(
-                                                            flight
-                                                                    .arrival()
-                                                                    .airport()
-                                                                    .iata()
-                                                    )
-                            )
-
-                            /*
-                             * FlightCandidate DTO 변환
-                             */
-                            .map(
-                                    flight ->
-                                            convert(
-
-                                                    flight,
-
-                                                    departureAirport,
-
-                                                    arrivalAirport,
-
-                                                    peopleCount,
-
-                                                    direction
-                                            )
-                            )
-
-                            .filter(
-                                    Objects::nonNull
-                            )
-
-                            /*
-                             * 빠른 출발순
-                             */
-                            .sorted(
-                                    Comparator.comparing(
-                                            FlightCandidate
-                                                    ::departureTime
-                                    )
-                            )
-
-                            .toList();
+                    String rateReset =
+                            firstHeader(
+                                    headers,
+                                    "x-ratelimit-reset"
+                            );
 
 
-            /*
-             * Redis JDK 직렬화에서도
-             * 명확한 ArrayList 형태로 저장
-             */
-            return new ArrayList<>(
-                    candidates
-            );
+                    String requestRemaining =
+                            firstHeader(
+                                    headers,
+                                    "x-ratelimit-requests-remaining"
+                            );
 
 
-        } catch (
-                RestClientResponseException e
-        ) {
-
-            int status =
-                    e.getStatusCode()
-                            .value();
+                    String requestReset =
+                            firstHeader(
+                                    headers,
+                                    "x-ratelimit-requests-reset"
+                            );
 
 
-            /*
-             * 해당 날짜 / 시간에 항공편 없음
-             */
-            if (
-                    status == 404
-            ) {
-
-                return new ArrayList<>();
-            }
+                    StringBuilder message =
+                            new StringBuilder(
+                                    "AeroDataBox API 호출 한도를 초과했습니다."
+                            );
 
 
-            /*
-             * RapidAPI 인증 실패
-             */
-            if (
-                    status == 401
-                            || status == 403
-            ) {
-
-                throw new IllegalStateException(
-                        "AeroDataBox 인증 또는 RapidAPI 구독 정보를 확인해주세요.",
-                        e
-                );
-            }
+                    appendHeaderValue(
+                            message,
+                            "Retry-After",
+                            retryAfter
+                    );
 
 
-            /*
-             * 호출 제한
-             *
-             * 여기서는 재시도하지 않는다.
-             *
-             * 429가 순간 호출 제한인지,
-             * 구독 요청량 소진인지 확인할 수 있도록
-             * RapidAPI 관련 응답 헤더를 예외 메시지에 남긴다.
-             */
-            if (
-                    status == 429
-            ) {
-
-                HttpHeaders headers =
-                        e.getResponseHeaders();
+                    appendHeaderValue(
+                            message,
+                            "RateRemaining",
+                            rateRemaining
+                    );
 
 
-                String retryAfter =
-                        firstHeader(
-                                headers,
-                                HttpHeaders.RETRY_AFTER
+                    appendHeaderValue(
+                            message,
+                            "RateReset",
+                            rateReset
+                    );
+
+
+                    appendHeaderValue(
+                            message,
+                            "RequestRemaining",
+                            requestRemaining
+                    );
+
+
+                    appendHeaderValue(
+                            message,
+                            "RequestReset",
+                            requestReset
+                    );
+
+
+                    if (
+                            rateLimitRetryCount
+                                    < MAX_RATE_LIMIT_RETRIES
+                    ) {
+
+                        rateLimitRetryCount++;
+
+
+                        long retryDelayMs =
+                                resolveRetryDelayMillis(
+                                        retryAfter
+                                );
+
+
+                        sleepForRateLimitRetry(
+                                retryDelayMs
                         );
 
 
-                String rateRemaining =
-                        firstHeader(
-                                headers,
-                                "x-ratelimit-remaining"
-                        );
+                        continue;
+                    }
 
 
-                String rateReset =
-                        firstHeader(
-                                headers,
-                                "x-ratelimit-reset"
-                        );
-
-
-                String requestRemaining =
-                        firstHeader(
-                                headers,
-                                "x-ratelimit-requests-remaining"
-                        );
-
-
-                String requestReset =
-                        firstHeader(
-                                headers,
-                                "x-ratelimit-requests-reset"
-                        );
-
-
-                StringBuilder message =
-                        new StringBuilder(
-                                "AeroDataBox API 호출 한도를 초과했습니다."
-                        );
-
-
-                appendHeaderValue(
-                        message,
-                        "Retry-After",
-                        retryAfter
-                );
-
-
-                appendHeaderValue(
-                        message,
-                        "RateRemaining",
-                        rateRemaining
-                );
-
-
-                appendHeaderValue(
-                        message,
-                        "RateReset",
-                        rateReset
-                );
-
-
-                appendHeaderValue(
-                        message,
-                        "RequestRemaining",
-                        requestRemaining
-                );
-
-
-                appendHeaderValue(
-                        message,
-                        "RequestReset",
-                        requestReset
-                );
+                    throw new IllegalStateException(
+                            message.toString(),
+                            e
+                    );
+                }
 
 
                 throw new IllegalStateException(
-                        message.toString(),
+                        "AeroDataBox API 호출에 실패했습니다. HTTP "
+                                + status,
+                        e
+                );
+
+
+            } catch (
+                    RestClientException e
+            ) {
+
+                throw new IllegalStateException(
+                        "AeroDataBox API 연결에 실패했습니다.",
                         e
                 );
             }
+        }
+    }
 
 
-            throw new IllegalStateException(
-                    "AeroDataBox API 호출에 실패했습니다. HTTP "
-                            + status,
-                    e
-            );
+    private long resolveRetryDelayMillis(
+            String retryAfter
+    ) {
 
-
-        } catch (
-                RestClientException e
+        if (
+                retryAfter == null
+                        || retryAfter.isBlank()
         ) {
 
+            return DEFAULT_RATE_LIMIT_RETRY_DELAY_MS;
+        }
+
+
+        try {
+
+            long seconds =
+                    Long.parseLong(
+                            retryAfter.trim()
+                    );
+
+
+            return Math.max(
+                    DEFAULT_RATE_LIMIT_RETRY_DELAY_MS,
+                    seconds * 1000L
+            );
+
+        } catch (
+                NumberFormatException ignored
+        ) {
+
+            return DEFAULT_RATE_LIMIT_RETRY_DELAY_MS;
+        }
+    }
+
+
+    private void sleepForRateLimitRetry(
+            long delayMs
+    ) {
+
+        try {
+
+            Thread.sleep(
+                    delayMs
+            );
+
+        } catch (
+                InterruptedException e
+        ) {
+
+            Thread.currentThread()
+                    .interrupt();
+
+
             throw new IllegalStateException(
-                    "AeroDataBox API 연결에 실패했습니다.",
+                    "AeroDataBox 429 재시도 대기 중 중단되었습니다.",
                     e
             );
         }

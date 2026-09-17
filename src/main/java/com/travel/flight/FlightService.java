@@ -1,7 +1,6 @@
 package com.travel.flight;
 
 import com.travel.external.flight.AeroDataBoxFlightClient;
-
 import com.travel.flight.dto.FlightCandidate;
 import com.travel.flight.dto.FlightSearchRequest;
 import com.travel.flight.dto.FlightSearchResponse;
@@ -9,7 +8,6 @@ import com.travel.flight.type.FlightDirection;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -84,17 +82,48 @@ public class FlightService {
 
         /*
          * ========================================
-         * 가는 편
+         * 한 요청에서는 한 방향만 조회한다.
          *
-         * 여행 시작일의
+         * OUTBOUND 요청
+         * → 가는 편만 AeroDataBox 호출
          *
-         * startTime
-         * ~
-         * 23:59
+         * RETURN 요청
+         * → 오는 편만 AeroDataBox 호출
          *
-         * 모든 항공편 조회
+         * 하루 전체를 12시간 단위로 나누므로
+         * 각 요청당 외부 API는 최대 2회 호출된다.
          * ========================================
          */
+
+        if (
+                request.direction()
+                        == FlightDirection.OUTBOUND
+        ) {
+
+            return searchOutbound(
+                    request,
+                    departureAirport,
+                    arrivalAirport
+            );
+        }
+
+
+        return searchReturn(
+                request,
+                departureAirport,
+                arrivalAirport
+        );
+    }
+
+
+    private FlightSearchResponse searchOutbound(
+
+            FlightSearchRequest request,
+
+            String departureAirport,
+
+            String arrivalAirport
+    ) {
 
         LocalDateTime outboundFrom =
                 LocalDateTime.of(
@@ -130,9 +159,6 @@ public class FlightService {
                 );
 
 
-        /*
-         * 한 번 더 시작시간 필터링.
-         */
         outboundFlights =
                 outboundFlights
                         .stream()
@@ -156,22 +182,27 @@ public class FlightService {
                         .toList();
 
 
-        /*
-         * ========================================
-         * 오는 편
-         *
-         * 종료일의
-         *
-         * 00:00
-         * ~
-         * 23:59
-         *
-         * 전체 조회
-         *
-         * 이후 실제 arrivalTime이
-         * 사용자 endTime 이전인 편만 남긴다.
-         * ========================================
-         */
+        return new FlightSearchResponse(
+
+                departureAirport,
+
+                arrivalAirport,
+
+                outboundFlights,
+
+                List.of()
+        );
+    }
+
+
+    private FlightSearchResponse searchReturn(
+
+            FlightSearchRequest request,
+
+            String departureAirport,
+
+            String arrivalAirport
+    ) {
 
         LocalDateTime returnFrom =
                 request.endDate()
@@ -179,10 +210,8 @@ public class FlightService {
 
 
         /*
-         * 당일치기라면
-         *
-         * 가는 편 출발 전의 오는 편은
-         * 후보가 될 수 없다.
+         * 당일치기라면 여행 시작 전 시간대는
+         * 오는 편 후보가 될 수 없다.
          */
         if (
                 request.startDate()
@@ -226,22 +255,6 @@ public class FlightService {
                 );
 
 
-        /*
-         * 사용자의 endTime을
-         *
-         * "오는 비행기 출발시간 제한"
-         *
-         * 이 아니라
-         *
-         * "최종적으로 여행을 끝내야 하는 시간"
-         *
-         * 으로 해석.
-         *
-         * 즉 서울로 돌아오는 경우
-         *
-         * GMP 도착시간 <= endTime
-         */
-
         LocalDateTime tripEnd =
                 LocalDateTime.of(
 
@@ -274,27 +287,13 @@ public class FlightService {
                         .toList();
 
 
-        /*
-         * 당일치기라면
-         * 가는 편 도착보다 반드시
-         * 이후에 출발하는 오는 편만 보여야 하지만,
-         *
-         * 사용자가 어느 가는 편을 선택할지
-         * 아직 모르므로 여기서는 전체 return 후보를
-         * 내려준다.
-         *
-         * 프론트에서 outbound 선택 후
-         * 필요한 경우 다시 필터 가능.
-         */
-
-
         return new FlightSearchResponse(
 
                 departureAirport,
 
                 arrivalAirport,
 
-                outboundFlights,
+                List.of(),
 
                 returnFlights
         );
@@ -307,10 +306,7 @@ public class FlightService {
      *
      * 12시간 단위로 나눠 호출하고 합친다.
      *
-     * 예:
-     *
-     * 06:00 ~ 18:00
-     * 18:00 ~ 23:59
+     * 하루 전체 조회라면 한 방향당 최대 2회.
      *
      * 경계시간이 중복될 수 있으므로
      * 마지막에 removeDuplicates().
@@ -391,11 +387,6 @@ public class FlightService {
             );
 
 
-            /*
-             * 정확히 경계를 이어서 호출.
-             *
-             * 중복은 마지막에 제거.
-             */
             cursor =
                     chunkTo;
         }
@@ -461,9 +452,6 @@ public class FlightService {
             FlightSearchRequest request
     ) {
 
-        /*
-         * 시작일 > 종료일 불가
-         */
         if (
                 request.startDate()
                         .isAfter(
@@ -477,11 +465,6 @@ public class FlightService {
         }
 
 
-        /*
-         * 당일 여행
-         *
-         * startTime < endTime
-         */
         if (
                 request.startDate()
                         .equals(

@@ -2,6 +2,7 @@ package com.travel.trip.plan.service;
 
 import com.travel.external.bedrock.BedrockClient;
 import com.travel.flight.dto.FlightCandidate;
+import com.travel.trip.entity.FoodPreference;
 import com.travel.trip.entity.Trip;
 import com.travel.trip.entity.TripPace;
 import com.travel.trip.plan.dto.TripPlanCandidatePool;
@@ -197,6 +198,11 @@ public class TripPlanBedrockService {
         );
 
         input.put(
+                "mandatoryDestination",
+                candidatePool.mandatoryDestination()
+        );
+
+        input.put(
                 "selectedOutboundFlight",
                 outboundFlight
         );
@@ -232,347 +238,141 @@ public class TripPlanBedrockService {
                 );
 
         return """
-        당신은 대한민국 국내여행 일정을 생성하는 전문 Travel Planner다.
+        당신은 대한민국 국내여행의 최종 일정 편성기다.
 
-        아래 입력에는 사용자가 직접 선택하여 확정한 숙소와 왕복 항공편,
-        그리고 기존 추천 API에서 자체 점수 계산 + 1차 Bedrock reranking까지 완료된
-        관광지/식당/카페 후보군이 들어 있다.
-
-        당신의 역할은 새로운 장소를 추천하는 것이 아니다.
-
-        이미 검증된 후보들 중에서 실제 방문할 장소를 선택하여
-        날짜별로 자연스럽고 현실적인 여행 일정을 구성하는 것이다.
+        입력에는 사용자가 확정한 숙소/왕복 항공편, 사용자가 직접 선택한 필수 목적지,
+        관광지/식당/카페 후보와 Kakao Mobility 실제 도로 거리/시간 요약이 포함되어 있다.
+        새로운 장소를 만들지 말고 입력 후보만 사용한다.
 
         ==================================================
-        [가장 중요한 기본 원칙]
+        [절대 규칙]
         ==================================================
-
-        1. ATTRACTION / RESTAURANT / CAFE는
-           반드시 입력 후보군에 존재하는 id만 사용한다.
-
-        2. 입력 후보에 없는 장소나 id를 절대 생성하지 않는다.
-
-        3. selectedAccommodation은 사용자가 메인 화면에서 직접 선택한
-           확정 숙소다.
-
-           숙소를 변경하거나 다른 숙소를 추천하지 않는다.
-
-        4. selectedOutboundFlight와 selectedReturnFlight도
-           사용자가 메인 화면에서 직접 선택한 확정 항공편이다.
-
-           항공편을 변경하거나 새로 만들지 않는다.
-
-        5. 숙소와 공항, 항공편은 Backend가 최종 일정에 직접 삽입한다.
-
-           따라서 days.items에는 아래 세 종류만 반환한다.
-
-           - ATTRACTION
-           - RESTAURANT
-           - CAFE
+        1. days.items에는 ATTRACTION / RESTAURANT / CAFE만 반환한다.
+        2. 후보에 없는 id를 생성하지 않는다.
+        3. 동일 id는 여행 전체에서 중복 사용하지 않는다.
+        4. mandatoryDestination이 존재하면 mandatory=true인 ATTRACTION을 여행 전체에서 정확히 1회 반드시 포함한다.
+           사용자가 동문시장 같은 목적지를 직접 선택했다면 일정에서 누락시키면 안 된다.
+        5. 항공/숙소/렌터카/공항 카드는 Backend가 삽입하므로 출력하지 않는다.
 
         ==================================================
-        [여행의 전체 흐름]
+        [실제 이동시간과 추천 품질]
         ==================================================
+        후보의 actualDriveMinutesFromAccommodation / actualDistanceKmFromAccommodation,
+        actualDriveMinutesFromDestination / actualDistanceKmFromDestination 값은
+        Kakao Mobility 실제 도로 길찾기 요약값이다. null이 아니면 직선거리보다 반드시 우선한다.
 
-        AIR 여행은 다음 전체 흐름을 기준으로 한다.
+        장소를 단순히 숙소에서 가까운 순서로 고르지 않는다.
+        거리보다 장소의 품질과 사용자 적합도를 더 중요하게 본다.
+
+        식당/카페 우선순위:
+        - rating, reviewCount, qualityScore를 매우 중요하게 본다.
+        - qualityScore와 추천 점수가 높은 후보를 우선한다.
+        - 거리는 지나치게 비효율적인 이동을 제거하는 제약으로 사용하며 품질보다 우선하지 않는다.
+        - 리뷰가 수천 개인 평점 4.6~4.8 후보가 조금 더 멀다는 이유만으로
+          리뷰가 적고 평가가 낮은 근거리 후보에 밀리지 않게 한다.
+
+        관광지는 현재 원천 데이터에 별점/리뷰 수가 없을 수 있으므로
+        recommendationScore, preferences, weather, 실제 도로 이동시간을 함께 본다.
+
+        하루 동선은 왕복 지그재그 이동을 피하되, 지나치게 좁은 반경 안의 장소만 고르지 않는다.
+
+        ==================================================
+        [식사 - 하루 3식]
+        ==================================================
+        식사는 관광지보다 우선한다.
+
+        중간 날짜(첫날/마지막날이 아닌 날):
+        - BREAKFAST 07:30~10:00 : RESTAURANT 1개
+        - LUNCH     11:30~14:00 : RESTAURANT 1개
+        - DINNER    17:30~20:30 : RESTAURANT 1개
+        가능한 한 정확히 3식을 배치한다.
 
         첫날:
+        - 항공 도착 후 실제로 가능한 식사부터 배치한다.
+        - 오전 도착이면 아침/점심/저녁 중 가능한 슬롯을 최대한 채운다.
+        - 늦은 도착이면 이미 지난 식사 슬롯을 억지로 만들지 않는다.
 
-        출발지역
-        → 출발공항
-        → 선택한 가는 항공편
-        → 목적지 공항
-        → 목적지 현지 일정
-        → 선택 숙소
+        마지막날:
+        - 체크아웃 및 귀국편 시간 안에서 가능한 식사를 최대한 배치한다.
+        - 항공 시간과 충돌하면 식사 수를 줄일 수 있다.
 
-        중간 날짜:
+        [식사 시간대 적합성]
+        각 식당의 breakfastFitScore / lunchFitScore / dinnerFitScore를 반드시 참고한다.
+        - 아침: 전복죽, 죽, 국밥, 해장국, 순두부, 미역국, 국수, 김밥, 브런치 등 아침에 자연스러운 메뉴 우선
+        - 점심: 일반적인 식사 후보를 폭넓게 허용
+        - 저녁: 흑돼지, 삼겹살, 구이, 회, 횟집, 전골, 바비큐 등 저녁형 메뉴 우선
+        예: 흑돼지/고기구이를 아침 식사로 배치하지 않는다.
+        businessHours가 제공되면 해당 방문 시각에 영업 가능한 후보만 사용한다.
 
-        선택 숙소
-        → 현지 일정
-        → 선택 숙소
-
-        마지막 날:
-
-        선택 숙소
-        → 현지 일정
-        → 목적지 공항
-        → 선택한 오는 항공편
-        → 출발지역 공항
-        → 원래 출발지역
-
-        첫날의 현지 일정은
-        selectedOutboundFlight.arrivalTime 이후부터 시작한다.
-
-        목적지 공항 도착 직후에는
-        수하물 수령, 렌터카 인수, 이동 준비 등을 고려하여
-        약 45~60분 정도의 여유를 둔다.
-
-        마지막 날은 selectedReturnFlight.departureTime보다
-        충분히 앞서 목적지 공항으로 이동할 수 있도록 구성한다.
-
-        국내선의 경우 실제 Routing API가 아직 없으므로
-        대략 항공편 출발 90분 전까지는 현지 일정을 종료하는 방향으로
-        보수적으로 판단한다.
+        중간 날짜의 마지막 현지 식사는 DINNER여야 하고, 그 뒤 숙소로 복귀하는 흐름을 전제로 한다.
 
         ==================================================
-        [식사 규칙 - 매우 중요]
+        [숙소 체크인/체크아웃]
         ==================================================
+        selectedAccommodation.checkInTime / checkOutTime을 일정의 고정 제약으로 본다.
 
-        식사는 선택사항이 아니라 실제 여행 일정의 필수 요소다.
+        첫날:
+        - checkInTime 전후에 숙소 체크인을 할 수 있도록 일정을 비운다.
+        - 체크인 뒤 시간이 남으면 다시 외출해 카페/관광/저녁을 할 수 있다.
+        - 체크인 시간 때문에 점심/저녁을 비현실적으로 건너뛰지 않는다.
 
-        관광지를 많이 넣기 위해 식사를 생략해서는 안 된다.
+        중간 날:
+        - 숙소에서 시작하고 저녁 식사 후 숙소로 돌아가는 흐름으로 구성한다.
 
-        가능한 경우 반드시 다음 시간대를 우선 확보한다.
-
-        점심:
-        - 11:30 ~ 14:00
-        - RESTAURANT 1개
-
-        저녁:
-        - 17:00 ~ 20:00
-        - RESTAURANT 1개
-
-        중간 날짜처럼 하루 전체를 목적지에서 보내는 날은
-        반드시 점심 1회 + 저녁 1회를 포함한다.
-
-        예:
-        숙소
-        → 관광지
-        → 점심
-        → 관광지
-        → 카페
-        → 저녁
-        → 숙소
-
-        첫날은 목적지 공항 도착시간에 따라 판단한다.
-
-        - 현지 일정 시작 가능 시간이 14:00 이전:
-          점심과 저녁을 모두 포함한다.
-
-        - 현지 일정 시작 가능 시간이 14:00 이후이고 17:00 이전:
-          최소 저녁을 포함한다.
-
-        - 17:00 이후 도착하는 매우 늦은 일정:
-          현실적으로 가능한 경우에만 저녁을 포함한다.
-
-        마지막 날은 귀국 항공편 시간에 따라 판단한다.
-
-        - 귀국편 출발시간이 14:00 이후:
-          가능한 경우 점심을 포함한다.
-
-        - 귀국편 출발시간이 20:00 이후이고
-          공항 이동시간까지 충분한 경우에만 저녁을 포함한다.
-
-        - 귀국 항공편 때문에 시간이 부족한 경우에는
-          마지막 날 저녁을 생략할 수 있다.
-
-        중요한 규칙:
-
-        중간 날짜에는 저녁 식사 없이
-        오후 4시나 5시에 바로 숙소로 복귀하는 일정을 만들지 않는다.
-
-        첫날 역시 현지에 오전 또는 낮에 도착했다면
-        저녁 식사 전에 숙소로 일정을 끝내지 않는다.
-
-        RESTAURANT 후보가 충분히 존재하는데
-        식사를 생략하면 안 된다.
-
-        같은 식당 id는 여행 전체에서 한 번만 사용한다.
+        마지막날:
+        - checkOutTime을 기준으로 숙소에서 나간 뒤 일정을 시작한다.
+        - 단, 귀국편 때문에 더 일찍 나가야 하는 경우 항공편 안전 시간이 우선한다.
 
         ==================================================
-        [CAFE 규칙 - 매우 중요]
+        [CAFE 정책]
         ==================================================
+        cafeCandidates가 비어 있지 않다면 CAFE 선호가 없어도 카페를 완전히 금지하지 않는다.
 
-        trip.foodPreferences에 CAFE가 포함되어 있고
-        cafeCandidates가 비어 있지 않다면
-        사용자가 카페 방문을 원한다고 판단한다.
+        trip.foodPreferences에 CAFE가 없는 경우:
+        - 첫날 또는 중간 날짜에 적당히 배치한다.
+        - 마지막 날은 원칙적으로 카페를 생략한다.
+        - 2박3일이면 보통 전체 1~2회 정도가 자연스럽다.
 
-        이 경우 카페를 일정에서 완전히 생략해서는 안 된다.
+        trip.foodPreferences에 CAFE가 있는 경우:
+        - 가능한 날마다 카페를 포함한다.
+        - 하루 전체를 쓰는 중간 날짜에는 카페 2회도 허용한다.
+        - 마지막 날도 항공 시간에 여유가 있으면 1회 가능하다.
 
-        2박 3일 정도의 여행이라면
-        전체 여행 중 최소 1~2회의 CAFE 방문을 포함한다.
-
-        하루 전체를 목적지에서 보내는 중간 날짜에는
-        가능한 경우 CAFE 1개를 포함한다.
-
-        첫날 현지 도착시간이 충분히 빠르다면
-        관광지와 저녁 사이에 카페를 배치할 수 있다.
-
-        마지막 날은 귀국 항공편 시간이 촉박하다면
-        카페를 생략할 수 있다.
-
-        카페의 자연스러운 배치 예:
-
-        관광지
-        → 점심
-        → 관광지
-        → 카페
-        → 관광지 또는 저녁
-
-        또는
-
-        관광지
-        → 카페
-        → 저녁
-
-        카페는 식당을 대체하지 않는다.
-
-        CAFE를 넣었다는 이유로
-        점심이나 저녁 RESTAURANT를 삭제하지 않는다.
-
-        cafeCandidates가 비어 있으면
-        CAFE를 절대 출력하지 않는다.
+        카페는 식사를 대체하지 않는다.
+        카페 때문에 아침/점심/저녁 RESTAURANT를 삭제하지 않는다.
 
         ==================================================
-        [관광지 규칙]
+        [항공/시간]
         ==================================================
+        첫날 현지 일정은 selectedOutboundFlight.arrivalTime 이후부터 시작한다.
+        공항 도착 뒤 수하물/렌터카 인수/이동 준비 시간을 고려한다.
 
-        식사와 필요한 휴식 시간을 먼저 확보하고
-        남는 시간에 관광지를 배치한다.
+        마지막 날은 selectedReturnFlight.departureTime보다 충분히 먼저 현지 일정을 끝낸다.
+        국내선은 공항 도착 목표를 최소 출발 90분 전으로 둔다.
 
-        관광지만 연속해서 지나치게 많이 넣지 않는다.
-
-        추천점수 순서대로 단순 나열하지 않는다.
-
-        다음 요소를 함께 고려한다.
-
-        - 사용자 preferences
-        - 날짜별 weather
-        - 후보의 위도/경도
-        - 식사 시간
-        - 카페 선호
-        - pace
-        - 숙소 위치
-        - 첫날 항공 도착시간
-        - 마지막 날 항공 출발시간
+        startTime은 Backend가 실제 Kakao 구간시간으로 최종 재정렬하기 전의 목표 방문 시각이다.
+        이동시간을 무시해 앞 일정 종료보다 이른 시간을 만들지 않는다.
 
         ==================================================
-        [이동 동선 규칙]
+        [관광/날씨/PACE]
         ==================================================
+        식사, 체크인/체크아웃, 필수 목적지를 먼저 확보한 뒤 관광지를 배치한다.
+        RAIN/SNOW는 실내 또는 날씨 영향을 덜 받는 후보를 우선한다.
+        SUNNY/CLOUDY는 야외/자연 후보를 적극 활용한다.
 
-        selectedAccommodation의 latitude / longitude를
-        목적지 여행의 기준 위치로 사용한다.
+        RELAXED: 관광지 수를 줄이고 체류시간을 늘린다. 식사는 생략하지 않는다.
+        BALANCED: 식사/관광/카페를 균형 있게 구성한다.
+        ACTIVE: 이동 가능한 범위에서 관광지를 더 배치하되 식사는 생략하지 않는다.
 
-        localTransportMode가 RENTAL_CAR이면
-        목적지 내 이동은 렌터카라고 가정한다.
-
-        아직 실제 Routing API는 연결되지 않았으므로
-        정확한 도로 이동시간을 계산하려고 하지 않는다.
-
-        대신 후보의 latitude / longitude를 비교하여
-        같은 날 가능한 한 가까운 지역끼리 묶는다.
-
-        예를 들어 한 장소를 방문한 뒤
-        반대편 지역으로 갔다가 다시 원래 지역으로 돌아오는 식의
-        비효율적인 왕복 동선을 피한다.
-
-        하루 일정은 가능한 한 하나의 이동 방향 또는
-        인접 지역 중심으로 구성한다.
+        권장 체류시간:
+        - ATTRACTION: RELAXED 90~150분, BALANCED 60~120분, ACTIVE 45~90분
+        - RESTAURANT: 60~90분
+        - CAFE: 45~90분
 
         ==================================================
-        [날씨 규칙]
+        [출력 JSON]
         ==================================================
-
-        dailyWeather는 날짜별로 반드시 반영한다.
-
-        RAIN 또는 SNOW인 날은
-        실내 장소 또는 날씨 영향을 덜 받는 후보를 우선한다.
-
-        SUNNY 또는 CLOUDY인 날은
-        자연/야외 관광지를 보다 적극적으로 사용할 수 있다.
-
-        날씨가 좋지 않더라도
-        단순히 모든 관광지를 제거하지 말고
-        후보 특성과 사용자 성향을 함께 판단한다.
-
-        ==================================================
-        [PACE 규칙]
-        ==================================================
-
-        RELAXED:
-        - 관광지 개수를 줄인다.
-        - 개별 장소 체류시간을 길게 잡는다.
-        - 식사와 카페, 휴식은 생략하지 않는다.
-        - RELAXED는 '일찍 숙소로 복귀'라는 뜻이 아니다.
-
-        BALANCED:
-        - 일반적인 여행 밀도로 구성한다.
-        - 식사, 관광, 카페를 균형 있게 배치한다.
-
-        ACTIVE:
-        - 이동 가능한 범위에서 관광지를 더 많이 배치한다.
-        - 그렇더라도 점심과 저녁을 생략하지 않는다.
-
-        ==================================================
-        [대략적인 체류시간]
-        ==================================================
-
-        ATTRACTION:
-        - RELAXED: 약 90~150분
-        - BALANCED: 약 60~120분
-        - ACTIVE: 약 45~90분
-
-        RESTAURANT:
-        - 약 60~90분
-
-        CAFE:
-        - 약 45~90분
-
-        ==================================================
-        [시간 생성 규칙]
-        ==================================================
-
-        startTime은 각 장소의 예상 방문 시작 시각이다.
-
-        실제 이동시간은 추후 Routing API를 연결하면
-        Backend에서 다시 계산할 예정이다.
-
-        현재는 위도/경도를 이용해 이동 시간을 대략 고려하되
-        지나치게 촘촘하거나 비현실적인 시간을 만들지 않는다.
-
-        이전 장소의 종료시간보다
-        다음 장소의 startTime이 빠르면 안 된다.
-
-        이동시간을 전혀 고려하지 않고
-        장소 종료 직후 즉시 다른 장소가 시작되는 일정도 피한다.
-
-        식사 시간대는 특히 우선적으로 지킨다.
-
-        ==================================================
-        [중복 금지]
-        ==================================================
-
-        동일한 장소 id를 여행 전체에서 중복 사용하지 않는다.
-
-        ATTRACTION id 중복 금지.
-        RESTAURANT id 중복 금지.
-        CAFE id 중복 금지.
-
-        ==================================================
-        [일정 생성 우선순위]
-        ==================================================
-
-        일정 생성 시 다음 우선순위를 따른다.
-
-        1순위: 확정된 항공편 시간 준수
-        2순위: 점심 / 저녁 식사 확보
-        3순위: 사용자의 핵심 preferences와 foodPreferences 반영
-        4순위: 날짜별 날씨
-        5순위: 숙소 기준 지리적 동선
-        6순위: 카페 및 휴식
-        7순위: 관광지 추가 배치
-
-        관광지 하나를 더 넣기 위해
-        점심이나 저녁을 제거하지 않는다.
-
-        ==================================================
-        [출력 형식]
-        ==================================================
-
-        반드시 아래와 같은 JSON 객체만 반환한다.
-
-        Markdown code fence(```)를 사용하지 않는다.
-        JSON 앞뒤로 설명 문장을 출력하지 않는다.
+        JSON 객체만 반환한다. Markdown code fence와 설명문은 금지한다.
 
         {
           "days": [
@@ -580,67 +380,35 @@ public class TripPlanBedrockService {
               "dayNumber": 1,
               "items": [
                 {
-                  "type": "ATTRACTION",
-                  "id": 123,
-                  "startTime": "10:30",
-                  "stayMinutes": 90,
-                  "reason": "선택 이유"
-                },
-                {
                   "type": "RESTAURANT",
                   "id": 456,
-                  "startTime": "12:30",
+                  "startTime": "12:10",
                   "stayMinutes": 75,
-                  "reason": "점심 식사와 사용자 음식 선호를 반영"
+                  "reason": "점심 시간대 적합성과 높은 평점/리뷰를 우선"
                 },
                 {
-                  "type": "CAFE",
-                  "id": 789,
-                  "startTime": "15:30",
-                  "stayMinutes": 60,
-                  "reason": "카페 선호와 동선을 반영"
-                },
-                {
-                  "type": "RESTAURANT",
-                  "id": 999,
-                  "startTime": "18:30",
-                  "stayMinutes": 75,
-                  "reason": "저녁 식사와 이동 동선을 반영"
+                  "type": "ATTRACTION",
+                  "id": 123,
+                  "startTime": "14:00",
+                  "stayMinutes": 90,
+                  "reason": "필수 목적지 및 실제 이동 동선 반영"
                 }
               ]
             }
           ]
         }
 
-        모든 여행 날짜에 해당하는 dayNumber를 반드시 반환한다.
+        모든 여행 날짜의 dayNumber를 반드시 반환한다.
 
-        허용 type은 반드시 아래 세 가지뿐이다.
-
-        ATTRACTION
-        RESTAURANT
-        CAFE
-
-        숙소, 공항, 항공편, 출발지는 days.items에 넣지 않는다.
-        해당 항목들은 Backend가 고정 일정으로 삽입한다.
-
-        ==================================================
-        [최종 자체 검증 후 응답]
-        ==================================================
-
-        JSON을 반환하기 전에 내부적으로 다음 사항을 반드시 확인한다.
-
-        - 중간 날짜에 점심이 있는가?
-        - 중간 날짜에 저녁이 있는가?
-        - 첫날 오전/낮 도착인데 저녁이 누락되지 않았는가?
-        - 마지막 날 귀국편 전 점심 시간이 충분한데 점심이 누락되지 않았는가?
-        - foodPreferences에 CAFE가 있는데 여행 전체에 카페가 하나도 없는가?
-        - 동일 장소 id가 중복되었는가?
-        - 항공편 시간과 일정이 충돌하는가?
-        - 마지막 날 공항 이동 시간이 확보되어 있는가?
-        - RELAXED라는 이유로 식사를 생략하지 않았는가?
-
-        하나라도 문제가 있다면
-        조건을 만족하도록 일정 자체를 수정한 뒤 최종 JSON을 반환한다.
+        반환 전 자체 검증:
+        - mandatory=true 목적지가 정확히 1회 포함되었는가?
+        - 중간 날짜에 아침/점심/저녁 3식이 있는가?
+        - 아침에 흑돼지/구이/횟집 같은 저녁형 식당을 넣지 않았는가?
+        - 중간 날짜의 마지막 현지 식사가 저녁인가?
+        - 첫날 체크인 시간과 마지막날 체크아웃 시간을 고려했는가?
+        - 카페가 식사를 밀어내지 않았는가?
+        - rating/reviewCount가 좋은 후보가 단순 거리 때문에 불합리하게 배제되지 않았는가?
+        - 항공편 시간과 충돌하지 않는가?
 
         ==================================================
         [입력 JSON]
@@ -867,6 +635,21 @@ public class TripPlanBedrockService {
             );
         }
 
+        candidatePool.attractions()
+                .stream()
+                .filter(TripPlanCandidatePool.AttractionCandidate::mandatory)
+                .findFirst()
+                .ifPresent(mandatory -> {
+                    String mandatoryKey =
+                            TripPlanItemType.ATTRACTION.name() + ":" + mandatory.id();
+
+                    if (!usedPlaceKeys.contains(mandatoryKey)) {
+                        throw new IllegalStateException(
+                                "Bedrock 일정에서 사용자가 선택한 필수 목적지가 누락되었습니다."
+                        );
+                    }
+                });
+
         return result;
     }
 
@@ -935,174 +718,286 @@ public class TripPlanBedrockService {
             FlightCandidate outboundFlight,
             FlightCandidate returnFlight
     ) {
-
         int totalDays =
                 (int) ChronoUnit.DAYS.between(
                         trip.getStartDate(),
                         trip.getEndDate()
                 ) + 1;
 
-        int attractionIndex = 0;
-        int restaurantIndex = 0;
-        int cafeIndex = 0;
+        Set<Long> usedRestaurants = new HashSet<>();
+        Set<Long> usedAttractions = new HashSet<>();
+        Set<Long> usedCafes = new HashSet<>();
 
-        List<PlannedDay> days =
-                new ArrayList<>();
+        TripPlanCandidatePool.AttractionCandidate mandatory =
+                candidatePool.attractions()
+                        .stream()
+                        .filter(TripPlanCandidatePool.AttractionCandidate::mandatory)
+                        .findFirst()
+                        .orElse(null);
 
-        for (int dayNumber = 1;
-             dayNumber <= totalDays;
-             dayNumber++) {
+        int mandatoryDay =
+                totalDays >= 3 ? 2 : 1;
 
-            List<PlannedItem> items =
-                    new ArrayList<>();
+        boolean cafePreferred =
+                trip.getFoodPreferences().contains(FoodPreference.CAFE);
 
-            LocalTime cursor =
-                    defaultDayStartTime(
-                            dayNumber,
-                            trip,
-                            outboundFlight
-                    );
+        List<PlannedDay> days = new ArrayList<>();
 
-            int attractionTarget =
-                    switch (trip.getPace()) {
-                        case RELAXED -> 1;
-                        case BALANCED -> 2;
-                        case ACTIVE -> 3;
-                    };
+        for (int dayNumber = 1; dayNumber <= totalDays; dayNumber++) {
+            boolean firstDay = dayNumber == 1;
+            boolean lastDay = dayNumber == totalDays;
 
-            if (
-                    restaurantIndex
-                            < candidatePool.restaurants().size()
-            ) {
-
-                TripPlanCandidatePool.RestaurantCandidate restaurant =
-                        candidatePool.restaurants()
-                                .get(
-                                        restaurantIndex++
-                                );
-
-                LocalTime mealTime =
-                        cursor.isBefore(
-                                LocalTime.of(
-                                        11,
-                                        30
-                                )
-                        )
-                                ? LocalTime.of(
-                                12,
-                                0
-                        )
-                                : cursor;
-
-                items.add(
-                        new PlannedItem(
-                                TripPlanItemType.RESTAURANT,
-                                restaurant.id(),
-                                mealTime,
-                                75,
-                                "추천 점수 상위 식당을 일정에 배치했습니다."
-                        )
-                );
-
-                cursor =
-                        mealTime.plusMinutes(
-                                105
-                        );
-            }
-
-            for (int i = 0;
-                 i < attractionTarget
-                         && attractionIndex
-                         < candidatePool.attractions().size();
-                 i++) {
-
-                TripPlanCandidatePool.AttractionCandidate attraction =
-                        candidatePool.attractions()
-                                .get(
-                                        attractionIndex++
-                                );
-
-                int stay =
-                        defaultStayMinutes(
-                                TripPlanItemType.ATTRACTION,
-                                trip.getPace()
-                        );
-
-                items.add(
-                        new PlannedItem(
-                                TripPlanItemType.ATTRACTION,
-                                attraction.id(),
-                                cursor,
-                                stay,
-                                "추천 점수 상위 관광지를 일정에 배치했습니다."
-                        )
-                );
-
-                cursor =
-                        cursor.plusMinutes(
-                                stay + 45L
-                        );
-            }
-
-            if (
-                    cafeIndex
-                            < candidatePool.cafes().size()
-            ) {
-
-                TripPlanCandidatePool.CafeCandidate cafe =
-                        candidatePool.cafes()
-                                .get(
-                                        cafeIndex++
-                                );
-
-                items.add(
-                        new PlannedItem(
-                                TripPlanItemType.CAFE,
-                                cafe.id(),
-                                cursor,
-                                60,
-                                "사용자의 카페 선호를 반영했습니다."
-                        )
-                );
-            }
-
-            days.add(
-                    new PlannedDay(
-                            dayNumber,
-                            items
-                    )
+            List<PlannedItem> items = new ArrayList<>();
+            LocalTime cursor = defaultDayStartTime(
+                    dayNumber,
+                    trip,
+                    candidatePool,
+                    outboundFlight
             );
+
+            // 중간 날은 기본적으로 3식, 첫/마지막 날은 실제 이용 가능 시간에 맞춰 가능한 식사를 넣는다.
+            if (!firstDay && cursor.isBefore(LocalTime.of(9, 30))) {
+                TripPlanCandidatePool.RestaurantCandidate breakfast =
+                        pickRestaurant(candidatePool.restaurants(), usedRestaurants, MealSlot.BREAKFAST);
+                if (breakfast != null) {
+                    LocalTime time = maxTime(cursor, LocalTime.of(8, 0));
+                    items.add(new PlannedItem(
+                            TripPlanItemType.RESTAURANT, breakfast.id(), time, 60,
+                            "아침 식사 적합도와 평점/리뷰 품질을 우선한 fallback 식사"
+                    ));
+                    usedRestaurants.add(breakfast.id());
+                    cursor = time.plusMinutes(90);
+                }
+            }
+
+            if (mandatory != null
+                    && dayNumber == mandatoryDay
+                    && usedAttractions.add(mandatory.id())) {
+                if (cursor.isBefore(LocalTime.of(10, 0))) {
+                    cursor = LocalTime.of(10, 0);
+                }
+                items.add(new PlannedItem(
+                        TripPlanItemType.ATTRACTION, mandatory.id(), cursor,
+                        defaultStayMinutes(TripPlanItemType.ATTRACTION, trip.getPace()),
+                        "사용자가 직접 선택한 필수 목적지"
+                ));
+                cursor = cursor.plusMinutes(
+                        defaultStayMinutes(TripPlanItemType.ATTRACTION, trip.getPace()) + 30L
+                );
+            }
+
+            if (cursor.isBefore(LocalTime.of(14, 0))) {
+                TripPlanCandidatePool.RestaurantCandidate lunch =
+                        pickRestaurant(candidatePool.restaurants(), usedRestaurants, MealSlot.LUNCH);
+                if (lunch != null) {
+                    LocalTime time = maxTime(cursor, LocalTime.of(11, 30));
+                    if (time.isBefore(LocalTime.of(14, 15))) {
+                        items.add(new PlannedItem(
+                                TripPlanItemType.RESTAURANT, lunch.id(), time, 75,
+                                "점심 시간대 적합도와 평점/리뷰 품질을 우선한 fallback 식사"
+                        ));
+                        usedRestaurants.add(lunch.id());
+                        cursor = time.plusMinutes(105);
+                    }
+                }
+            }
+
+            int attractionTarget = switch (trip.getPace()) {
+                case RELAXED -> 1;
+                case BALANCED -> 2;
+                case ACTIVE -> 3;
+            };
+
+            for (int i = 0; i < attractionTarget; i++) {
+                TripPlanCandidatePool.AttractionCandidate attraction =
+                        pickAttraction(candidatePool.attractions(), usedAttractions);
+                if (attraction == null || cursor.isAfter(LocalTime.of(17, 0))) {
+                    break;
+                }
+
+                int stay = defaultStayMinutes(TripPlanItemType.ATTRACTION, trip.getPace());
+                items.add(new PlannedItem(
+                        TripPlanItemType.ATTRACTION, attraction.id(), cursor, stay,
+                        "추천 점수와 실제 도로 이동 효율을 함께 고려한 fallback 관광지"
+                ));
+                usedAttractions.add(attraction.id());
+                cursor = cursor.plusMinutes(stay + 30L);
+            }
+
+            int cafeTarget;
+            if (cafePreferred) {
+                cafeTarget = (!firstDay && !lastDay) ? 2 : 1;
+            } else {
+                cafeTarget = lastDay ? 0 : 1;
+            }
+
+            for (int i = 0; i < cafeTarget; i++) {
+                TripPlanCandidatePool.CafeCandidate cafe =
+                        pickCafe(candidatePool.cafes(), usedCafes);
+                if (cafe == null || cursor.isAfter(LocalTime.of(17, 30))) {
+                    break;
+                }
+
+                items.add(new PlannedItem(
+                        TripPlanItemType.CAFE, cafe.id(), cursor, 60,
+                        cafePreferred
+                                ? "카페 선호와 평점/리뷰 품질을 반영"
+                                : "식사를 방해하지 않는 범위에서 휴식용 카페를 배치"
+                ));
+                usedCafes.add(cafe.id());
+                cursor = cursor.plusMinutes(90);
+            }
+
+            boolean dinnerAllowed =
+                    !lastDay
+                            || returnFlight == null
+                            || returnFlight.departureTime() == null
+                            || returnFlight.departureTime().toLocalTime().isAfter(LocalTime.of(20, 30));
+
+            if (dinnerAllowed) {
+                TripPlanCandidatePool.RestaurantCandidate dinner =
+                        pickRestaurant(candidatePool.restaurants(), usedRestaurants, MealSlot.DINNER);
+                if (dinner != null) {
+                    LocalTime time = maxTime(cursor, LocalTime.of(17, 30));
+                    if (time.isBefore(LocalTime.of(20, 31))) {
+                        items.add(new PlannedItem(
+                                TripPlanItemType.RESTAURANT, dinner.id(), time, 75,
+                                "저녁 식사 적합도와 평점/리뷰 품질을 우선한 fallback 식사"
+                        ));
+                        usedRestaurants.add(dinner.id());
+                    }
+                }
+            }
+
+            items.sort(Comparator.comparing(
+                    item -> item.startTime() == null ? LocalTime.MAX : item.startTime()
+            ));
+
+            days.add(new PlannedDay(dayNumber, items));
+        }
+
+        // 여행이 짧거나 항공 시간이 빡빡해 지정된 날에 못 넣은 경우 필수 목적지는 첫날에 강제 보강한다.
+        if (mandatory != null && !usedAttractions.contains(mandatory.id()) && !days.isEmpty()) {
+            PlannedDay first = days.get(0);
+            List<PlannedItem> corrected = new ArrayList<>(first.items());
+            corrected.add(new PlannedItem(
+                    TripPlanItemType.ATTRACTION, mandatory.id(), LocalTime.of(14, 30),
+                    defaultStayMinutes(TripPlanItemType.ATTRACTION, trip.getPace()),
+                    "사용자가 직접 선택한 필수 목적지"
+            ));
+            corrected.sort(Comparator.comparing(
+                    item -> item.startTime() == null ? LocalTime.MAX : item.startTime()
+            ));
+            days.set(0, new PlannedDay(first.dayNumber(), corrected));
         }
 
         return days;
     }
 
+    private TripPlanCandidatePool.RestaurantCandidate pickRestaurant(
+            List<TripPlanCandidatePool.RestaurantCandidate> candidates,
+            Set<Long> usedIds,
+            MealSlot slot
+    ) {
+        return candidates.stream()
+                .filter(item -> !usedIds.contains(item.id()))
+                .max(Comparator.comparingDouble(item -> restaurantSlotScore(item, slot)))
+                .orElse(null);
+    }
+
+    private double restaurantSlotScore(
+            TripPlanCandidatePool.RestaurantCandidate item,
+            MealSlot slot
+    ) {
+        double fit = switch (slot) {
+            case BREAKFAST -> safe(item.breakfastFitScore());
+            case LUNCH -> safe(item.lunchFitScore());
+            case DINNER -> safe(item.dinnerFitScore());
+        };
+
+        // 품질 65%, 시간대 적합도 30%, 거리 5% 수준으로 거리 영향력을 제한한다.
+        double quality = safe(item.qualityScore());
+        double route = routeConvenience(item.actualDriveMinutesFromAccommodation());
+        return quality * 0.65 + fit * 0.30 + route * 0.05;
+    }
+
+    private TripPlanCandidatePool.AttractionCandidate pickAttraction(
+            List<TripPlanCandidatePool.AttractionCandidate> candidates,
+            Set<Long> usedIds
+    ) {
+        return candidates.stream()
+                .filter(item -> !item.mandatory())
+                .filter(item -> !usedIds.contains(item.id()))
+                .max(Comparator.comparingDouble(item ->
+                        safe(item.recommendationScore()) * 0.85
+                                + routeConvenience(item.actualDriveMinutesFromAccommodation()) * 0.15
+                ))
+                .orElse(null);
+    }
+
+    private TripPlanCandidatePool.CafeCandidate pickCafe(
+            List<TripPlanCandidatePool.CafeCandidate> candidates,
+            Set<Long> usedIds
+    ) {
+        return candidates.stream()
+                .filter(item -> !usedIds.contains(item.id()))
+                .max(Comparator.comparingDouble(item ->
+                        safe(item.qualityScore()) * 0.75
+                                + safe(item.recommendationScore()) * 0.20
+                                + routeConvenience(item.actualDriveMinutesFromAccommodation()) * 0.05
+                ))
+                .orElse(null);
+    }
+
+    private double routeConvenience(Integer minutes) {
+        if (minutes == null) return 0.5;
+        return Math.max(0.0, 1.0 - Math.min(60, minutes) / 60.0);
+    }
+
+    private double safe(Double value) {
+        return value == null ? 0.0 : value;
+    }
+
+    private LocalTime maxTime(LocalTime a, LocalTime b) {
+        return a.isAfter(b) ? a : b;
+    }
+
+    private enum MealSlot {
+        BREAKFAST, LUNCH, DINNER
+    }
+
     private LocalTime defaultDayStartTime(
             int dayNumber,
             Trip trip,
+            TripPlanCandidatePool candidatePool,
             FlightCandidate outboundFlight
     ) {
-
-        if (
-                dayNumber == 1
-                        && outboundFlight != null
-                        && outboundFlight.arrivalTime() != null
-        ) {
-
-            return outboundFlight
-                    .arrivalTime()
-                    .toLocalTime()
-                    .plusMinutes(60);
+        if (dayNumber == 1
+                && outboundFlight != null
+                && outboundFlight.arrivalTime() != null) {
+            return outboundFlight.arrivalTime().toLocalTime().plusMinutes(60);
         }
 
         if (dayNumber == 1) {
             return trip.getStartTime();
         }
 
-        return LocalTime.of(
-                9,
-                30
-        );
+        int totalDays =
+                (int) ChronoUnit.DAYS.between(trip.getStartDate(), trip.getEndDate()) + 1;
+
+        if (dayNumber == totalDays) {
+            String checkOut = candidatePool.accommodation().checkOutTime();
+            if (checkOut != null && !checkOut.isBlank()) {
+                try {
+                    return LocalTime.parse(checkOut);
+                } catch (Exception ignored) {
+                    // fallback below
+                }
+            }
+            return LocalTime.of(10, 0);
+        }
+
+        return LocalTime.of(8, 0);
     }
 
     private String extractJson(
