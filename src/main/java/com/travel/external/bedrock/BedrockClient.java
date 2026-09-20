@@ -88,8 +88,8 @@ public class BedrockClient {
                                                     .inferenceConfig(
                                                             config ->
                                                                     config
-                                                                            .maxTokens(2048)
-                                                                            .temperature(0.0F)
+                                                                            .maxTokens(maxTokens)
+                                                                            .temperature(temperature)
 
                                                     )
                             );

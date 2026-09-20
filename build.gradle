@@ -44,15 +44,13 @@ dependencies {
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
-    //redis
-    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    // cache abstraction (Redis starter is declared above)
     implementation 'org.springframework.boot:spring-boot-starter-cache'
     // AWS Bedrock
     implementation platform('software.amazon.awssdk:bom:2.54.2')
     implementation 'software.amazon.awssdk:bedrockruntime'
     implementation 'software.amazon.awssdk:sqs'
     implementation 'software.amazon.awssdk:auth'
-    implementation platform('software.amazon.awssdk:bom:2.54.2')
     implementation 'software.amazon.awssdk:sts'
     //test
     testRuntimeOnly 'com.h2database:h2'

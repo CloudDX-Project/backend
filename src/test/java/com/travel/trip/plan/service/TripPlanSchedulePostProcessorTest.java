@@ -154,6 +154,129 @@ class TripPlanSchedulePostProcessorTest {
                 .doesNotContain("아침");
     }
 
+    @Test
+    void firstDayGetsDinnerBeforeTheSingleNightReturn() {
+        Trip trip = mock(Trip.class);
+        when(trip.getLocalTransportMode()).thenReturn(LocalTransportMode.RENTAL_CAR);
+
+        LocalDate date = LocalDate.of(2026, 9, 19);
+        TripPlanCandidatePool pool = pool(
+                List.of(restaurant(1L, "애월저녁식당", 0.1, 0.7, 1.0)),
+                List.of(),
+                List.of()
+        );
+        TripPlanDayResponse firstDay = day(1, date, List.of(
+                item(TripPlanItemType.ATTRACTION, 10L, "애월관광지", "관광",
+                        date.atTime(14, 0), date.atTime(15, 30), 33.51, 126.51),
+                item(TripPlanItemType.ACCOMMODATION, 100L, "숙소", "NIGHT_RETURN",
+                        date.atTime(15, 50), null, 33.50, 126.50)
+        ));
+
+        List<TripPlanDayResponse> result = processor.ensureFirstDayDinner(
+                trip, pool, List.of(firstDay, day(2, date.plusDays(1), List.of()))
+        );
+
+        assertThat(result.get(0).items())
+                .extracting(TripPlanItemResponse::type)
+                .containsExactly(
+                        TripPlanItemType.ATTRACTION,
+                        TripPlanItemType.RESTAURANT,
+                        TripPlanItemType.ACCOMMODATION
+                );
+        TripPlanItemResponse dinner = result.get(0).items().get(1);
+        assertThat(dinner.startAt()).isEqualTo(date.atTime(17, 30));
+        assertThat(result.get(0).items().get(2).category()).isEqualTo("NIGHT_RETURN");
+    }
+
+    @Test
+    void fillsLongMiddleDayGapFromUnusedCandidatePool() {
+        Trip trip = mock(Trip.class);
+        when(trip.getLocalTransportMode()).thenReturn(LocalTransportMode.RENTAL_CAR);
+
+        LocalDate date = LocalDate.of(2026, 9, 20);
+        TripPlanCandidatePool pool = pool(
+                List.of(),
+                List.of(attraction(99L, "공백을 채울 관광지")),
+                List.of()
+        );
+        TripPlanDayResponse middleDay = day(2, date, List.of(
+                item(TripPlanItemType.ATTRACTION, 10L, "산지천", "관광",
+                        date.atTime(13, 55), date.atTime(15, 25), 33.51, 126.51),
+                item(TripPlanItemType.RESTAURANT, 20L, "저녁식당", "한식",
+                        date.atTime(18, 30), date.atTime(19, 45), 33.52, 126.52),
+                item(TripPlanItemType.ACCOMMODATION, 100L, "숙소", "NIGHT_RETURN",
+                        date.atTime(20, 5), null, 33.50, 126.50)
+        ));
+
+        List<TripPlanDayResponse> result = processor.fillLongIdleGaps(
+                trip,
+                pool,
+                List.of(day(1, date.minusDays(1), List.of()), middleDay, day(3, date.plusDays(1), List.of()))
+        );
+
+        assertThat(result.get(1).items())
+                .extracting(TripPlanItemResponse::name)
+                .containsSequence("산지천", "공백을 채울 관광지", "저녁식당");
+        TripPlanItemResponse inserted = result.get(1).items().get(1);
+        assertThat(inserted.startAt()).isEqualTo(date.atTime(15, 45));
+        assertThat(inserted.endAt()).isEqualTo(date.atTime(17, 15));
+    }
+
+    @Test
+    void movesDinnerEarlierWhenNoUnusedPlaceFitsTheGap() {
+        Trip trip = mock(Trip.class);
+        when(trip.getLocalTransportMode()).thenReturn(LocalTransportMode.RENTAL_CAR);
+
+        LocalDate date = LocalDate.of(2026, 9, 20);
+        TripPlanCandidatePool pool = pool(List.of(), List.of(), List.of());
+        TripPlanDayResponse middleDay = day(2, date, List.of(
+                item(TripPlanItemType.CAFE, 10L, "오후 카페", "카페",
+                        date.atTime(14, 27), date.atTime(15, 57), 33.51, 126.51),
+                item(TripPlanItemType.RESTAURANT, 20L, "저녁식당", "한식",
+                        date.atTime(18, 30), date.atTime(19, 45), 33.52, 126.52),
+                item(TripPlanItemType.ACCOMMODATION, 100L, "숙소", "NIGHT_RETURN",
+                        date.atTime(20, 5), null, 33.50, 126.50)
+        ));
+
+        List<TripPlanDayResponse> result = processor.fillLongIdleGaps(
+                trip,
+                pool,
+                List.of(day(1, date.minusDays(1), List.of()), middleDay, day(3, date.plusDays(1), List.of()))
+        );
+
+        TripPlanItemResponse shiftedDinner = result.get(1).items().get(1);
+        assertThat(shiftedDinner.startAt()).isEqualTo(date.atTime(17, 0));
+        assertThat(shiftedDinner.endAt()).isEqualTo(date.atTime(18, 15));
+        assertThat(shiftedDinner.reason()).contains("앞당긴 저녁");
+    }
+
+    @Test
+    void usesNinePmReturnDeadlineToAddAnEveningCafeThenReleasesTheAnchor() {
+        Trip trip = mock(Trip.class);
+        when(trip.getLocalTransportMode()).thenReturn(LocalTransportMode.RENTAL_CAR);
+
+        LocalDate date = LocalDate.of(2026, 9, 19);
+        TripPlanCandidatePool pool = pool(
+                List.of(), List.of(), List.of(cafe(77L, "저녁 카페"))
+        );
+        TripPlanDayResponse firstDay = day(1, date, List.of(
+                item(TripPlanItemType.RESTAURANT, 20L, "저녁식당", "한식",
+                        date.atTime(18, 0), date.atTime(19, 15), 33.52, 126.52),
+                item(TripPlanItemType.ACCOMMODATION, 100L, "숙소", "NIGHT_RETURN",
+                        date.atTime(21, 0), null, 33.50, 126.50)
+        ));
+
+        List<TripPlanDayResponse> filled = processor.fillLongIdleGaps(
+                trip, pool, List.of(firstDay, day(2, date.plusDays(1), List.of()))
+        );
+        assertThat(filled.get(0).items())
+                .extracting(TripPlanItemResponse::name)
+                .containsExactly("저녁식당", "저녁 카페", "숙소");
+
+        List<TripPlanDayResponse> released = processor.releaseNightReturnDeadlines(filled);
+        assertThat(released.get(0).items().getLast().startAt()).isNull();
+    }
+
     private TripPlanCandidatePool pool(
             List<TripPlanCandidatePool.RestaurantCandidate> restaurants,
             List<TripPlanCandidatePool.AttractionCandidate> attractions,

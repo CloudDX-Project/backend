@@ -30,7 +30,7 @@ public class TripPlanGenerationStateService {
             Long userId,
             Long tripId
     ) {
-        Trip trip = tripRepository.findByIdAndUserId(tripId, userId)
+        Trip trip = tripRepository.findOwnedForUpdate(tripId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.TRIP_NOT_FOUND));
 
         TripPlanGeneration generation = generationRepository.findByTrip_Id(tripId)

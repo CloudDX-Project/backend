@@ -44,6 +44,7 @@ class TripPlanGenerationStateServiceTest {
         when(trip.getUser()).thenReturn(user);
         when(user.getId()).thenReturn(2L);
         when(tripRepository.findByIdAndUserId(3L, 2L)).thenReturn(Optional.of(trip));
+        when(tripRepository.findOwnedForUpdate(3L, 2L)).thenReturn(Optional.of(trip));
     }
 
     @Test
@@ -100,7 +101,7 @@ class TripPlanGenerationStateServiceTest {
 
     @Test
     void rejectsUnknownOwnerAndMissingJob() {
-        when(tripRepository.findByIdAndUserId(3L, 99L)).thenReturn(Optional.empty());
+        when(tripRepository.findOwnedForUpdate(3L, 99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.prepare(99L, 3L))
                 .isInstanceOfSatisfying(

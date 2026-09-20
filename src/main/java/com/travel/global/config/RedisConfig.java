@@ -1,239 +1,84 @@
 package com.travel.global.config;
 
+import com.travel.cafe.CafeCandidateService;
+import com.travel.flight.dto.FlightCandidate;
+import com.travel.global.cache.BoundedTtlCache;
+import com.travel.global.cache.ResilientCache;
+import com.travel.routing.dto.DrivingRouteResult;
+import com.travel.trip.plan.dto.TripPlanCandidatePool;
+import com.travel.weather.WeatherCondition;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
-import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.cache.support.SimpleCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.cache.RedisCacheConfiguration;
-import org.springframework.data.redis.cache.RedisCacheManager;
+import org.springframework.core.env.Environment;
+import org.springframework.data.redis.cache.*;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.serializer.JdkSerializationRedisSerializer;
-import org.springframework.data.redis.serializer.RedisSerializationContext;
-import org.springframework.data.redis.serializer.StringRedisSerializer;
-
-import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
+import org.springframework.data.redis.serializer.*;
+import tools.jackson.databind.JavaType;
+import tools.jackson.databind.json.JsonMapper;
+import java.time.*;
+import java.util.*;
 
 @Configuration
 @EnableCaching
 public class RedisConfig {
-
     @Bean
-    @ConditionalOnProperty(
-            name = "app.cache.provider",
-            havingValue = "redis"
-    )
-    public CacheManager redisCacheManager(
-            RedisConnectionFactory connectionFactory
-    ) {
-
-        /*
-         * 중요:
-         *
-         * Spring Boot DevTools의 RestartClassLoader를
-         * 사용하도록 명시한다.
-         *
-         * 기본 JdkSerializationRedisSerializer()를 사용하면
-         * DevTools 환경에서 캐시 조회 시 ClassLoader 충돌이
-         * 발생할 수 있다.
-         */
-        ClassLoader classLoader =
-                RedisConfig.class.getClassLoader();
-
-        JdkSerializationRedisSerializer valueSerializer =
-                new JdkSerializationRedisSerializer(
-                        classLoader
-                );
-
-        /*
-         * Redis 기본 캐시 설정
-         *
-         * Key   -> String
-         * Value -> Java Serialization
-         */
-        RedisCacheConfiguration defaultConfig =
-                RedisCacheConfiguration
-                        .defaultCacheConfig()
-
-                        /*
-                         * Redis Key 직렬화
-                         */
-                        .serializeKeysWith(
-                                RedisSerializationContext
-                                        .SerializationPair
-                                        .fromSerializer(
-                                                new StringRedisSerializer()
-                                        )
-                        )
-
-                        /*
-                         * Redis Value 직렬화
-                         *
-                         * Weather 결과:
-                         * Map<LocalDate, WeatherCondition>
-                         *
-                         * 현재 구조에서는 Java 직렬화로
-                         * 간단하게 처리
-                         */
-                        .serializeValuesWith(
-                                RedisSerializationContext
-                                        .SerializationPair
-                                        .fromSerializer(
-                                                valueSerializer
-                                        )
-                        )
-
-                        /*
-                         * null 값은 Redis에 저장하지 않음
-                         */
-                        .disableCachingNullValues();
-
-
-        /*
-         * 캐시별 설정
-         */
-        Map<String, RedisCacheConfiguration> cacheConfigurations =
-                new HashMap<>();
-
-
-        /*
-         * 기상청 단기예보
-         *
-         * TTL: 2시간
-         */
-        cacheConfigurations.put(
-                "weatherShort",
-                defaultConfig.entryTtl(
-                        Duration.ofHours(2)
-                )
-        );
-
-
-        /*
-         * 기상청 중기예보
-         *
-         * TTL: 6시간
-         */
-        cacheConfigurations.put(
-                "weatherMid",
-                defaultConfig.entryTtl(
-                        Duration.ofHours(6)
-                )
-        );
-
-        /*
-         * 항공 스케줄
-         */
-        cacheConfigurations.put(
-                "flightSchedule",
-                defaultConfig.entryTtl(
-                        Duration.ofHours(12)
-                )
-        );
-
-        /*
-         * Kakao Mobility 자동차 길찾기
-         *
-         * 같은 좌표 조합의 반복 호출을 줄여
-         * 무료 쿼터를 절약한다.
-         * 현재 교통 상황이 반영되므로 TTL은 짧게 유지한다.
-         */
-        cacheConfigurations.put(
-                "kakaoDrivingRoute",
-                defaultConfig.entryTtl(
-                        Duration.ofMinutes(15)
-                )
-        );
-
-        /*
-         * 카페 추천 1차 후보군
-         *
-         * DB -> 거리/평점/카페특성 점수 계산 결과를
-         * Bedrock 호출 직전 상태로 저장한다.
-         */
-        cacheConfigurations.put(
-                "cafeCandidates",
-                defaultConfig.entryTtl(
-                        Duration.ofMinutes(30)
-                )
-        );
-
-
-        /*
-         * TripPlan 일정 생성용 최종 후보군.
-         *
-         * 각 도메인의 기존 recommend 로직에서
-         * 자체 점수 + Bedrock reranking까지 끝난
-         * 최대 30개를 저장한다.
-         */
-        cacheConfigurations.put(
-                "tripPlanAttractionCandidates",
-                defaultConfig.entryTtl(
-                        Duration.ofMinutes(30)
-                )
-        );
-
-        cacheConfigurations.put(
-                "tripPlanRestaurantCandidates",
-                defaultConfig.entryTtl(
-                        Duration.ofMinutes(30)
-                )
-        );
-
-        cacheConfigurations.put(
-                "tripPlanCafeCandidates",
-                defaultConfig.entryTtl(
-                        Duration.ofMinutes(30)
-                )
-        );
-
-
-        /*
-         * Redis CacheManager 생성
-         */
-        return RedisCacheManager
-                .builder(connectionFactory)
-
-                /*
-                 * 별도 설정이 없는 캐시는
-                 * 기본 1시간
-                 */
-                .cacheDefaults(
-                        defaultConfig.entryTtl(
-                                Duration.ofHours(1)
-                        )
-                )
-
-                /*
-                 * weatherShort / weatherMid
-                 * 개별 TTL 적용
-                 */
-                .withInitialCacheConfigurations(
-                        cacheConfigurations
-                )
-
-                .build();
-    }
-
-    @Bean
-    @ConditionalOnProperty(
-            name = "app.cache.provider",
-            havingValue = "simple",
-            matchIfMissing = true
-    )
-    public CacheManager simpleCacheManager() {
-        return new ConcurrentMapCacheManager(
-                "weatherShort",
-                "weatherMid",
-                "flightSchedule",
-                "kakaoDrivingRoute",
-                "cafeCandidates",
-                "tripPlanAttractionCandidates",
-                "tripPlanRestaurantCandidates",
-                "tripPlanCafeCandidates"
-        );
+    public CacheManager cacheManager(ObjectProvider<RedisConnectionFactory> connections, JsonMapper mapper,
+                                      Environment env, MeterRegistry meters) {
+        String provider = env.getProperty("app.cache.provider", "simple");
+        if (!Set.of("redis", "simple").contains(provider)) throw new IllegalArgumentException("CACHE_PROVIDER must be redis or simple");
+        String namespace = env.getProperty("app.cache.namespace", "travel:local:cache:v3");
+        if (namespace.isBlank()) throw new IllegalArgumentException("CACHE_NAMESPACE must not be blank");
+        var types = mapper.getTypeFactory();
+        Map<String, JavaType> valueTypes = Map.of(
+                "weatherShort", types.constructMapType(HashMap.class, LocalDate.class, WeatherCondition.class),
+                "weatherMid", types.constructMapType(HashMap.class, LocalDate.class, WeatherCondition.class),
+                "flightSchedule", types.constructCollectionType(ArrayList.class, FlightCandidate.class),
+                "kakaoDrivingRoute", types.constructType(DrivingRouteResult.class),
+                "cafeCandidates", types.constructType(CafeCandidateService.CafeCandidatePool.class),
+                "tripPlanAttractionCandidates", types.constructCollectionType(ArrayList.class, TripPlanCandidatePool.AttractionCandidate.class),
+                "tripPlanRestaurantCandidates", types.constructCollectionType(ArrayList.class, TripPlanCandidatePool.RestaurantCandidate.class),
+                "tripPlanCafeCandidates", types.constructCollectionType(ArrayList.class, TripPlanCandidatePool.CafeCandidate.class));
+        Map<String, Duration> defaults = Map.of(
+                "weatherShort", Duration.ofHours(2), "weatherMid", Duration.ofHours(6),
+                "flightSchedule", Duration.ofHours(12), "kakaoDrivingRoute", Duration.ofMinutes(15),
+                "cafeCandidates", Duration.ofMinutes(30), "tripPlanAttractionCandidates", Duration.ofMinutes(30),
+                "tripPlanRestaurantCandidates", Duration.ofMinutes(30), "tripPlanCafeCandidates", Duration.ofMinutes(30));
+        Map<String, Duration> ttls = new HashMap<>();
+        Map<String, RedisCacheConfiguration> configs = new HashMap<>();
+        valueTypes.forEach((name, type) -> {
+            Duration ttl = env.getProperty("app.cache.ttl." + name, Duration.class, defaults.get(name));
+            if (ttl == null || ttl.isZero() || ttl.isNegative()) throw new IllegalArgumentException("Invalid TTL for " + name);
+            ttls.put(name, ttl);
+            configs.put(name, RedisCacheConfiguration.defaultCacheConfig().entryTtl(ttl)
+                    .computePrefixWith(cacheName -> namespace + ":" + cacheName + "::")
+                    .disableCachingNullValues()
+                    .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
+                    .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(
+                            new JacksonJsonRedisSerializer<Object>(mapper, type))));
+        });
+        RedisCacheManager shared = null;
+        if ("redis".equals(provider)) {
+            shared = RedisCacheManager.builder(RedisCacheWriter.nonLockingRedisCacheWriter(
+                            connections.getObject(), BatchStrategies.scan(500)))
+                    .withInitialCacheConfigurations(configs).disableCreateOnMissingCache().build();
+            shared.initializeCaches();
+        }
+        int maxEntries = env.getProperty("app.cache.local-max-entries", Integer.class, 256);
+        List<Cache> caches = new ArrayList<>();
+        for (String name : valueTypes.keySet()) {
+            Duration ttl = ttls.get(name);
+            Duration localTtl = shared == null || ttl.compareTo(Duration.ofSeconds(60)) < 0 ? ttl : Duration.ofSeconds(60);
+            var local = new BoundedTtlCache(name, localTtl, maxEntries, Clock.systemUTC());
+            caches.add(new ResilientCache(shared == null ? null : shared.getCache(name), local, meters));
+        }
+        SimpleCacheManager manager = new SimpleCacheManager();
+        manager.setCaches(caches);
+        return manager;
     }
 }

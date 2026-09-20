@@ -139,6 +139,14 @@ public class TripPlanGeneration {
         updatedAt = now;
     }
 
+    public void replaceCompletedResult(String json, LocalDateTime now) {
+        if (status != TripPlanGenerationStatus.COMPLETED) {
+            throw new IllegalStateException("Only completed plans can be edited");
+        }
+        resultJson = json;
+        updatedAt = now;
+    }
+
     private String truncate(String value) {
         if (value == null || value.isBlank()) {
             return "여행 일정 생성 중 오류가 발생했습니다.";

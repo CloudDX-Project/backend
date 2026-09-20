@@ -10,6 +10,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
+import java.net.http.HttpClient;
+import java.time.Duration;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +32,7 @@ public class KakaoMobilityDirectionsClient {
     ) {
         this.restClient =
                 RestClient.builder()
+                        .requestFactory(requestFactory())
                         .baseUrl(baseUrl)
                         .build();
 
@@ -39,7 +43,7 @@ public class KakaoMobilityDirectionsClient {
             value = "kakaoDrivingRoute",
             key = "#originLatitude + ':' + #originLongitude + ':' + "
                     + "#destinationLatitude + ':' + #destinationLongitude",
-            unless = "#result == null"
+            sync = true
     )
     public DrivingRouteResult findRoute(
             Double originLatitude,
@@ -119,6 +123,13 @@ public class KakaoMobilityDirectionsClient {
                     e
             );
         }
+    }
+
+    private static JdkClientHttpRequestFactory requestFactory() {
+        var factory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(3)).build());
+        factory.setReadTimeout(Duration.ofSeconds(8));
+        return factory;
     }
 
     private DrivingRouteResult convert(

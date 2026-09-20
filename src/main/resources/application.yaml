@@ -17,7 +17,13 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      timeout: 2000ms
+      username: ${REDIS_USERNAME:}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      ssl:
+        enabled: ${REDIS_SSL_ENABLED:false}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:1s}
+      timeout: ${REDIS_TIMEOUT:1s}
 
 springdoc:
   swagger-ui:
@@ -33,8 +39,23 @@ springdoc:
 app:
   runtime-role: ${APP_RUNTIME_ROLE:api}
 
+  recommendation:
+    # 후보 재정렬 Bedrock 호출은 기본적으로 생략한다. 최종 일정 Planner 호출은 유지된다.
+    bedrock-rerank-enabled: ${BEDROCK_RERANK_ENABLED:false}
+
   cache:
     provider: ${CACHE_PROVIDER:simple}
+    namespace: ${CACHE_NAMESPACE:travel:local:cache:v3}
+    local-max-entries: ${CACHE_LOCAL_MAX_ENTRIES:256}
+    ttl:
+      kakaoDrivingRoute: ${CACHE_ROUTE_TTL:15m}
+      weatherShort: ${CACHE_WEATHER_SHORT_TTL:2h}
+      weatherMid: ${CACHE_WEATHER_MID_TTL:6h}
+      flightSchedule: ${CACHE_FLIGHT_TTL:12h}
+      cafeCandidates: ${CACHE_CANDIDATE_TTL:30m}
+      tripPlanAttractionCandidates: ${CACHE_CANDIDATE_TTL:30m}
+      tripPlanRestaurantCandidates: ${CACHE_CANDIDATE_TTL:30m}
+      tripPlanCafeCandidates: ${CACHE_CANDIDATE_TTL:30m}
 
 jwt:
   secret: ${JWT_SECRET}

@@ -60,6 +60,10 @@ public class UserController {
                 response
         );
     }
+    @Operation(
+            summary = "로그인",
+            description = "이메일과 비밀번호를 검증해 JWT 액세스 토큰을 반환하고 리프레시 토큰을 HttpOnly 쿠키로 발급합니다."
+    )
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<UserLoginResponse>> login(
             @Valid @RequestBody UserLoginRequest request
@@ -74,6 +78,10 @@ public class UserController {
                 ));
     }
 
+    @Operation(
+            summary = "액세스 토큰 갱신",
+            description = "HttpOnly 쿠키의 리프레시 토큰을 검증하고 새 액세스 토큰과 회전된 리프레시 토큰을 발급합니다."
+    )
     @PostMapping("/refresh")
     public ResponseEntity<ApiResponse<UserLoginResponse>> refresh(
             @CookieValue(name = REFRESH_COOKIE_NAME, required = false) String refreshToken
@@ -92,6 +100,10 @@ public class UserController {
                 ));
     }
 
+    @Operation(
+            summary = "로그아웃",
+            description = "리프레시 토큰을 폐기하고 인증 쿠키를 만료시켜 현재 세션을 종료합니다."
+    )
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(
             @CookieValue(name = REFRESH_COOKIE_NAME, required = false) String refreshToken

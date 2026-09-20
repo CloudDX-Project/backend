@@ -14,6 +14,7 @@ import com.travel.trip.entity.TripPreference;
 import com.travel.weather.WeatherCondition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +30,9 @@ import java.util.Set;
 
 @Service
 public class AttractionRecommendationService {
+
+    @Value("${app.recommendation.bedrock-rerank-enabled:false}")
+    private boolean bedrockRerankEnabled;
 
     private static final Logger log =
             LoggerFactory.getLogger(
@@ -202,12 +206,9 @@ public class AttractionRecommendationService {
 
         try {
 
-            aiDecisions =
-                    rerankWithBedrock(
-                            request,
-                            aiCandidates,
-                            limit
-                    );
+            aiDecisions = bedrockRerankEnabled
+                    ? rerankWithBedrock(request, aiCandidates, limit)
+                    : List.of();
 
         } catch (Exception e) {
 

@@ -38,6 +38,10 @@ public class TripPlanSchedulePostProcessor {
     private static final LocalTime BREAKFAST_AT = LocalTime.of(8, 0);
     private static final LocalTime LUNCH_AT = LocalTime.of(12, 30);
     private static final LocalTime DINNER_AT = LocalTime.of(18, 30);
+    private static final LocalTime FIRST_DAY_DINNER_EARLIEST = LocalTime.of(17, 30);
+    private static final LocalTime DINNER_FALLBACK_EARLIEST = LocalTime.of(17, 0);
+    private static final int LONG_IDLE_GAP_MINUTES = 90;
+    private static final int MAX_GAP_CANDIDATE_CHECKS = 6;
     private static final double MIN_BREAKFAST_FIT_SCORE = 0.50;
 
     private final RoutingService routingService;
@@ -118,6 +122,332 @@ public class TripPlanSchedulePostProcessor {
         }
 
         return result;
+    }
+
+    /**
+     * 첫날에는 체크인 가능 시각에 바로 숙소로 보내지 않고 저녁 식사를 보장한다.
+     * 숙소 카드는 실제 하루 일정이 끝난 뒤의 NIGHT_RETURN 한 건으로만 유지한다.
+     */
+    public List<TripPlanDayResponse> ensureFirstDayDinner(
+            Trip trip,
+            TripPlanCandidatePool candidatePool,
+            List<TripPlanDayResponse> days
+    ) {
+        if (days.isEmpty() || candidatePool.restaurants().isEmpty()) {
+            return days;
+        }
+
+        TripPlanDayResponse firstDay = days.get(0);
+        boolean alreadyHasDinner = firstDay.items().stream()
+                .filter(item -> item.type() == TripPlanItemType.RESTAURANT)
+                .map(TripPlanItemResponse::startAt)
+                .filter(java.util.Objects::nonNull)
+                .anyMatch(time -> !time.toLocalTime().isBefore(FIRST_DAY_DINNER_EARLIEST));
+        if (alreadyHasDinner) {
+            return days;
+        }
+
+        List<TripPlanItemResponse> items = new ArrayList<>(firstDay.items());
+        int nightReturnIndex = findCategoryIndex(items, "NIGHT_RETURN");
+        if (nightReturnIndex <= 0) {
+            return days;
+        }
+
+        TripPlanItemResponse previous = items.get(nightReturnIndex - 1);
+        LocalDateTime previousEnd = endOrStart(previous);
+        if (previousEnd == null) {
+            return days;
+        }
+
+        Set<Long> usedRestaurantIds = new HashSet<>();
+        days.forEach(day -> day.items().stream()
+                .filter(item -> item.type() == TripPlanItemType.RESTAURANT)
+                .map(TripPlanItemResponse::placeId)
+                .filter(java.util.Objects::nonNull)
+                .forEach(usedRestaurantIds::add));
+
+        TripPlanCandidatePool.RestaurantCandidate candidate = chooseRestaurant(
+                candidatePool.restaurants(), List.of(), usedRestaurantIds, MealSlot.DINNER
+        );
+        if (candidate == null) {
+            return days;
+        }
+
+        OptionalLong travelMinutes = routeMinutes(
+                previous.latitude(), previous.longitude(),
+                candidate.latitude(), candidate.longitude()
+        );
+        if (travelMinutes.isEmpty()) {
+            return days;
+        }
+
+        LocalDateTime earliestArrival = previousEnd.plusMinutes(travelMinutes.getAsLong());
+        LocalDateTime dinnerTarget = firstDay.date().atTime(FIRST_DAY_DINNER_EARLIEST);
+        LocalDateTime dinnerStart = earliestArrival.isAfter(dinnerTarget)
+                ? earliestArrival
+                : dinnerTarget;
+        TripPlanItemResponse dinner = restaurantItem(
+                dinnerStart,
+                candidate,
+                localSegmentMode(trip),
+                MealSlot.DINNER
+        );
+
+        items.add(nightReturnIndex, dinner);
+        List<TripPlanDayResponse> result = new ArrayList<>(days);
+        result.set(0, copyDay(firstDay, applyOrders(items)));
+        return result;
+    }
+
+    /**
+     * 이미 선택된 일정만 재배열하지 않고 전체 후보 풀에서 미사용 관광지/카페를 찾아
+     * 90분 이상의 긴 공백을 채운다. 외부 경로 API 호출을 제한하기 위해 점수 상위
+     * 후보 일부만 실제 경로로 검증한다.
+     */
+    public List<TripPlanDayResponse> fillLongIdleGaps(
+            Trip trip,
+            TripPlanCandidatePool candidatePool,
+            List<TripPlanDayResponse> days
+    ) {
+        if (days.isEmpty()) {
+            return days;
+        }
+
+        Set<String> usedKeys = collectUsedPlaceKeys(days);
+        List<TripPlanDayResponse> result = new ArrayList<>();
+
+        for (int dayIndex = 0; dayIndex < days.size(); dayIndex++) {
+            TripPlanDayResponse day = days.get(dayIndex);
+            if (dayIndex == days.size() - 1 || day.items().size() < 2) {
+                result.add(day);
+                continue;
+            }
+
+            List<TripPlanItemResponse> source = new ArrayList<>(day.items());
+            List<TripPlanItemResponse> repaired = new ArrayList<>();
+            for (int i = 0; i < source.size() - 1; i++) {
+                TripPlanItemResponse current = source.get(i);
+                TripPlanItemResponse next = source.get(i + 1);
+                repaired.add(current);
+
+                LocalDateTime currentEnd = endOrStart(current);
+                LocalDateTime nextStart = next.startAt();
+                if (currentEnd == null || nextStart == null
+                        || java.time.Duration.between(currentEnd, nextStart).toMinutes()
+                        < LONG_IDLE_GAP_MINUTES) {
+                    continue;
+                }
+
+                CandidateVisit visit = findGapVisit(
+                        trip, candidatePool, current, currentEnd, next, nextStart, usedKeys
+                );
+                if (visit != null) {
+                    repaired.add(visit.item());
+                    usedKeys.add(placeKey(visit.item().type(), visit.item().placeId()));
+                } else {
+                    TripPlanItemResponse shiftedDinner = shiftDinnerEarlier(
+                            current, currentEnd, next, day.date()
+                    );
+                    if (shiftedDinner != next) {
+                        source.set(i + 1, shiftedDinner);
+                    }
+                }
+            }
+            repaired.add(source.get(source.size() - 1));
+            result.add(copyDay(day, applyOrders(repaired)));
+        }
+
+        return result;
+    }
+
+    /**
+     * 21시는 후보 삽입을 위한 숙소 도착 상한일 뿐 실제 고정 도착 시각이 아니다.
+     * 후보 삽입이 끝나면 anchor를 해제해 마지막 활동에서 숙소까지의 실제 이동시간으로
+     * 최종 도착 시각을 다시 계산하게 한다.
+     */
+    public List<TripPlanDayResponse> releaseNightReturnDeadlines(
+            List<TripPlanDayResponse> days
+    ) {
+        List<TripPlanDayResponse> result = new ArrayList<>();
+        for (TripPlanDayResponse day : days) {
+            List<TripPlanItemResponse> items = day.items().stream()
+                    .map(item -> "NIGHT_RETURN".equals(item.category())
+                            ? copyWithTimesAndReason(
+                                    item, null, null, item.stayMinutes(), item.reason()
+                            )
+                            : item)
+                    .toList();
+            result.add(copyDay(day, applyOrders(items)));
+        }
+        return result;
+    }
+
+    private CandidateVisit findGapVisit(
+            Trip trip,
+            TripPlanCandidatePool pool,
+            TripPlanItemResponse current,
+            LocalDateTime currentEnd,
+            TripPlanItemResponse next,
+            LocalDateTime nextStart,
+            Set<String> usedKeys
+    ) {
+        CandidateVisit visit = findAttractionGapVisit(
+                trip, pool, current, currentEnd, next, nextStart, usedKeys, 90
+        );
+        if (visit != null) {
+            return visit;
+        }
+        visit = findCafeGapVisit(
+                trip, pool, current, currentEnd, next, nextStart, usedKeys, 60
+        );
+        if (visit != null) {
+            return visit;
+        }
+        visit = findAttractionGapVisit(
+                trip, pool, current, currentEnd, next, nextStart, usedKeys, 45
+        );
+        if (visit != null) {
+            return visit;
+        }
+        return findCafeGapVisit(
+                trip, pool, current, currentEnd, next, nextStart, usedKeys, 45
+        );
+    }
+
+    private CandidateVisit findAttractionGapVisit(
+            Trip trip,
+            TripPlanCandidatePool pool,
+            TripPlanItemResponse current,
+            LocalDateTime currentEnd,
+            TripPlanItemResponse next,
+            LocalDateTime nextStart,
+            Set<String> usedKeys,
+            int stayMinutes
+    ) {
+        return pool.attractions().stream()
+                .filter(item -> !usedKeys.contains(placeKey(TripPlanItemType.ATTRACTION, item.id())))
+                .sorted(Comparator.comparingDouble(
+                        (TripPlanCandidatePool.AttractionCandidate item) -> safe(item.recommendationScore())
+                ).reversed())
+                .limit(MAX_GAP_CANDIDATE_CHECKS)
+                .map(item -> feasibleGapVisit(
+                        trip, current, currentEnd, next, nextStart,
+                        TripPlanItemType.ATTRACTION, item.id(), item.name(), item.category(),
+                        item.latitude(), item.longitude(), stayMinutes,
+                        stayMinutes >= 90
+                                ? "긴 대기 시간을 줄이면서 다음 일정까지 이동 가능한 관광 일정입니다."
+                                : "남는 시간과 실제 이동시간에 맞춘 짧은 관광 일정입니다."
+                ))
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private CandidateVisit findCafeGapVisit(
+            Trip trip,
+            TripPlanCandidatePool pool,
+            TripPlanItemResponse current,
+            LocalDateTime currentEnd,
+            TripPlanItemResponse next,
+            LocalDateTime nextStart,
+            Set<String> usedKeys,
+            int stayMinutes
+    ) {
+        return pool.cafes().stream()
+                .filter(item -> !usedKeys.contains(placeKey(TripPlanItemType.CAFE, item.id())))
+                .sorted(Comparator.comparingDouble(
+                        (TripPlanCandidatePool.CafeCandidate item) ->
+                                safe(item.qualityScore()) + safe(item.recommendationScore()) * 0.25
+                ).reversed())
+                .limit(MAX_GAP_CANDIDATE_CHECKS)
+                .map(item -> feasibleGapVisit(
+                        trip, current, currentEnd, next, nextStart,
+                        TripPlanItemType.CAFE, item.id(), item.name(), item.category(),
+                        item.latitude(), item.longitude(), stayMinutes,
+                        stayMinutes >= 60
+                                ? "긴 대기 시간을 줄이면서 다음 일정까지 이동 가능한 카페 일정입니다."
+                                : "남는 시간과 실제 이동시간에 맞춘 짧은 카페 일정입니다."
+                ))
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+    }
+
+    /** 후보 일정이 들어가지 못하면 18:30 고정을 버리고 저녁을 17시 이후로 앞당긴다. */
+    private TripPlanItemResponse shiftDinnerEarlier(
+            TripPlanItemResponse current,
+            LocalDateTime currentEnd,
+            TripPlanItemResponse next,
+            java.time.LocalDate date
+    ) {
+        if (next.type() != TripPlanItemType.RESTAURANT
+                || next.startAt() == null
+                || next.startAt().toLocalTime().isBefore(DINNER_FALLBACK_EARLIEST)) {
+            return next;
+        }
+
+        OptionalLong travelMinutes = routeMinutes(
+                current.latitude(), current.longitude(),
+                next.latitude(), next.longitude()
+        );
+        if (travelMinutes.isEmpty()) {
+            return next;
+        }
+
+        LocalDateTime earliestArrival = currentEnd.plusMinutes(travelMinutes.getAsLong());
+        LocalDateTime fallbackStart = date.atTime(DINNER_FALLBACK_EARLIEST);
+        LocalDateTime shiftedStart = earliestArrival.isAfter(fallbackStart)
+                ? earliestArrival
+                : fallbackStart;
+        if (!shiftedStart.isBefore(next.startAt())) {
+            return next;
+        }
+
+        int stayMinutes = next.stayMinutes() == null ? 75 : next.stayMinutes();
+        return copyWithTimesAndReason(
+                next,
+                shiftedStart,
+                shiftedStart.plusMinutes(stayMinutes),
+                stayMinutes,
+                "긴 대기 시간을 줄이기 위해 실제 이동시간 기준으로 앞당긴 저녁 식사입니다."
+        );
+    }
+
+    private CandidateVisit feasibleGapVisit(
+            Trip trip,
+            TripPlanItemResponse current,
+            LocalDateTime currentEnd,
+            TripPlanItemResponse next,
+            LocalDateTime nextStart,
+            TripPlanItemType type,
+            Long id,
+            String name,
+            String category,
+            Double latitude,
+            Double longitude,
+            int stayMinutes,
+            String reason
+    ) {
+        OptionalLong toCandidate = routeMinutes(
+                current.latitude(), current.longitude(), latitude, longitude
+        );
+        OptionalLong toNext = routeMinutes(
+                latitude, longitude, next.latitude(), next.longitude()
+        );
+        if (toCandidate.isEmpty() || toNext.isEmpty()) {
+            return null;
+        }
+
+        LocalDateTime startAt = currentEnd.plusMinutes(toCandidate.getAsLong());
+        LocalDateTime endAt = startAt.plusMinutes(stayMinutes);
+        if (endAt.plusMinutes(toNext.getAsLong()).isAfter(nextStart)) {
+            return null;
+        }
+
+        return new CandidateVisit(new TripPlanItemResponse(
+                0, type, id, null, name, category, latitude, longitude,
+                startAt, endAt, stayMinutes, localSegmentMode(trip), reason
+        ));
     }
 
     private List<TripPlanItemResponse> buildMiddleDaySchedule(
@@ -295,72 +625,6 @@ public class TripPlanSchedulePostProcessor {
                 stayMinutes,
                 anchor.reason()
         );
-    }
-
-    /**
-     * 첫날 체크인은 단순히 "15시 이후"가 아니라 숙소 checkInTime anchor로 취급한다.
-     * 실제 이동시간상 anchor를 넘기는 앞 일정을 뒤에서부터 제거한다.
-     */
-    public List<TripPlanDayResponse> anchorFirstDayCheckIn(
-            Trip trip,
-            TripPlanCandidatePool candidatePool,
-            List<TripPlanDayResponse> days
-    ) {
-        if (days.isEmpty()) {
-            return days;
-        }
-
-        LocalTime checkInTime = parseTime(candidatePool.accommodation().checkInTime());
-        if (checkInTime == null) {
-            return days;
-        }
-
-        TripPlanDayResponse firstDay = days.get(0);
-        List<TripPlanItemResponse> items = new ArrayList<>(firstDay.items());
-        int checkInIndex = findCategoryIndex(items, "CHECK_IN");
-        if (checkInIndex < 0) {
-            return days;
-        }
-
-        LocalDateTime target = firstDay.date().atTime(checkInTime);
-        while (checkInIndex > 0) {
-            TripPlanItemResponse previous = items.get(checkInIndex - 1);
-            LocalDateTime previousEnd = endOrStart(previous);
-            OptionalLong travelMinutes = actualTravelMinutes(
-                    trip,
-                    previous,
-                    items.get(checkInIndex)
-            );
-
-            if (previousEnd == null
-                    || travelMinutes.isEmpty()
-                    || !previousEnd.plusMinutes(travelMinutes.getAsLong()).isAfter(target)) {
-                break;
-            }
-
-            int removableIndex = findLastRemovableIndex(items, checkInIndex);
-            if (removableIndex < 0) {
-                // 항공 도착 자체가 늦는 등 제거할 일정이 없으면 현실적으로 가능한 최초 시각을 사용한다.
-                target = previousEnd.plusMinutes(travelMinutes.getAsLong());
-                break;
-            }
-
-            items.remove(removableIndex);
-            checkInIndex = findCategoryIndex(items, "CHECK_IN");
-        }
-
-        TripPlanItemResponse checkIn = items.get(checkInIndex);
-        items.set(checkInIndex, copyWithTimesAndReason(
-                checkIn,
-                target,
-                target.plusMinutes(30),
-                checkIn.stayMinutes(),
-                "숙소 체크인 시간을 고정 anchor로 반영했습니다."
-        ));
-
-        List<TripPlanDayResponse> result = new ArrayList<>(days);
-        result.set(0, copyDay(firstDay, applyOrders(items)));
-        return result;
     }
 
     /**
@@ -702,6 +966,11 @@ public class TripPlanSchedulePostProcessor {
             return OptionalLong.empty();
         }
 
+        if (routingService.isSameLocation(
+                originLatitude, originLongitude, destinationLatitude, destinationLongitude)) {
+            return OptionalLong.of(0L);
+        }
+
         try {
             DrivingRouteResult route = routingService.findDrivingRoute(
                     originLatitude,
@@ -742,18 +1011,6 @@ public class TripPlanSchedulePostProcessor {
     private int findCategoryIndex(List<TripPlanItemResponse> items, String category) {
         for (int i = 0; i < items.size(); i++) {
             if (category.equals(items.get(i).category())) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private int findLastRemovableIndex(List<TripPlanItemResponse> items, int beforeIndex) {
-        for (int i = beforeIndex - 1; i >= 0; i--) {
-            TripPlanItemType type = items.get(i).type();
-            if (type == TripPlanItemType.ATTRACTION
-                    || type == TripPlanItemType.RESTAURANT
-                    || type == TripPlanItemType.CAFE) {
                 return i;
             }
         }
@@ -851,7 +1108,7 @@ public class TripPlanSchedulePostProcessor {
             if (!time.isBefore(LocalTime.of(11, 0)) && time.isBefore(LocalTime.of(15, 0))) {
                 return LUNCH;
             }
-            if (!time.isBefore(LocalTime.of(17, 30)) && time.isBefore(LocalTime.of(21, 30))) {
+            if (!time.isBefore(LocalTime.of(17, 0)) && time.isBefore(LocalTime.of(21, 30))) {
                 return DINNER;
             }
             return OUTSIDE_SLOT;

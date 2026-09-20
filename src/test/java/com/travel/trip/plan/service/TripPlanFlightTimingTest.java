@@ -98,6 +98,45 @@ class TripPlanFlightTimingTest {
         assertThat(segments.get(3).getLast().arrivalAt()).isEqualTo(at("13:03"));
     }
 
+    @Test void keepsOnlyTheFinalAccommodationOnTheFirstDay() {
+        List<TripPlanDayResponse> days = List.of(new TripPlanDayResponse(1, date, List.of(
+                item(TripPlanItemType.AIRPORT, "ARRIVAL_AIRPORT", "11:10", "11:40"),
+                item(TripPlanItemType.ACCOMMODATION, "CHECK_IN", "15:00", "15:30"),
+                item(TripPlanItemType.RESTAURANT, "저녁", "18:00", "19:15"),
+                item(TripPlanItemType.ACCOMMODATION, "NIGHT_RETURN", "19:35", null)
+        ), List.of()));
+
+        List<TripPlanDayResponse> result = service.enforceFirstDaySingleAccommodationAtEnd(days);
+
+        assertThat(result.getFirst().items())
+                .extracting(TripPlanItemResponse::type)
+                .containsExactly(
+                        TripPlanItemType.AIRPORT,
+                        TripPlanItemType.RESTAURANT,
+                        TripPlanItemType.ACCOMMODATION
+                );
+        assertThat(result.getFirst().items().getLast().category()).isEqualTo("NIGHT_RETURN");
+        assertThat(result.getFirst().items())
+                .extracting(TripPlanItemResponse::order)
+                .containsExactly(1, 2, 3);
+    }
+
+    @Test void doesNotArriveAtFirstDayAccommodationBeforeCheckInTime() {
+        List<TripPlanDayResponse> days = List.of(new TripPlanDayResponse(1, date, List.of(
+                item(TripPlanItemType.RESTAURANT, "점심", "12:00", "13:15"),
+                item(TripPlanItemType.ACCOMMODATION, "NIGHT_RETURN", "15:00", null)
+        ), List.of()));
+
+        List<TripPlanDayResponse> aligned = ReflectionTestUtils.invokeMethod(
+                service,
+                "reflowPlanTimesWithActualRoutes",
+                trip,
+                days
+        );
+
+        assertThat(aligned.getFirst().items().getLast().startAt()).isEqualTo(at("15:00"));
+    }
+
     @Test void allowsEarlyCheckoutForMorningReturnFlight() {
         List<TripPlanDayResponse> result = enforce(List.of(
                 item(TripPlanItemType.ACCOMMODATION, "CHECK_OUT", "11:00", null),

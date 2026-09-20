@@ -12,6 +12,7 @@ import com.travel.cafe.repository.CafeRepository;
 import com.travel.external.bedrock.BedrockClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -30,6 +31,9 @@ import java.util.Set;
 
 @Service
 public class CafeRecommendationService {
+
+    @Value("${app.recommendation.bedrock-rerank-enabled:false}")
+    private boolean bedrockRerankEnabled;
 
     private static final Logger log =
             LoggerFactory.getLogger(
@@ -161,13 +165,9 @@ public class CafeRecommendationService {
 
         try {
 
-            aiDecisions =
-                    rerankWithBedrock(
-                            request,
-                            candidates,
-                            menuMap,
-                            limit
-                    );
+            aiDecisions = bedrockRerankEnabled
+                    ? rerankWithBedrock(request, candidates, menuMap, limit)
+                    : List.of();
 
         } catch (Exception e) {
 

@@ -35,7 +35,6 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -135,6 +134,9 @@ public class TripPlanService {
                         returnFlight
                 );
 
+        days = enforceFirstDaySingleAccommodationAtEnd(days);
+        days = removeRedundantConsecutiveAccommodationStops(days);
+
         /*
          * Bedrock의 startTime은 목표 시각이다.
          * 최종 저장 전 Kakao Mobility 실제 이동시간으로 각 로컬 일정의 도착/시작 시각을
@@ -146,12 +148,18 @@ public class TripPlanService {
         );
 
         days = schedulePostProcessor.repairMealSlots(trip, candidatePool, days);
-        days = schedulePostProcessor.anchorFirstDayCheckIn(trip, candidatePool, days);
+        days = reflowPlanTimesWithActualRoutes(trip, days);
+        days = schedulePostProcessor.ensureFirstDayDinner(trip, candidatePool, days);
+        days = reflowPlanTimesWithActualRoutes(trip, days);
+        days = schedulePostProcessor.fillLongIdleGaps(trip, candidatePool, days);
+        days = schedulePostProcessor.releaseNightReturnDeadlines(days);
         days = reflowPlanTimesWithActualRoutes(trip, days);
         days = enforceReturnFlightDeadline(trip, days, false);
         days = schedulePostProcessor.fillLastDayByActualSlack(trip, candidatePool, days);
         days = reflowPlanTimesWithActualRoutes(trip, days);
         days = enforceReturnFlightDeadline(trip, days, true);
+        days = enforceFirstDaySingleAccommodationAtEnd(days);
+        days = removeRedundantConsecutiveAccommodationStops(days);
         days = schedulePostProcessor.normalizeMealRoleAfterRouting(days);
 
         persistPlanItems(
@@ -190,6 +198,21 @@ public class TripPlanService {
                 candidatePool.cafes().size(),
                 days
         );
+    }
+
+    /** Deterministic user edit: no candidate search or Bedrock call. Changed days only. */
+    @Transactional
+    public TripPlanResponse persistEditedPlan(Trip trip, TripPlanResponse original,
+                                               List<TripPlanDayResponse> changedDays) {
+        persistPlanItems(trip, changedDays);
+        var segments = rebuildTransportSegments(trip, changedDays, original.outboundFlight(), original.returnFlight());
+        Map<Integer, TripPlanDayResponse> changed = new HashMap<>();
+        for (var day : attachTransportSegments(changedDays, segments)) changed.put(day.dayNumber(), day);
+        var days = original.days().stream().map(day -> changed.getOrDefault(day.dayNumber(), day)).toList();
+        return new TripPlanResponse(original.tripId(), original.planner(), "USER_EDIT_KAKAO_VALIDATED",
+                original.mainTransportMode(), original.localTransportMode(), original.selectedAccommodation(),
+                original.selectedRental(), original.outboundFlight(), original.returnFlight(), original.weather(),
+                original.attractionCandidateCount(), original.restaurantCandidateCount(), original.cafeCandidateCount(), days);
     }
 
     private void validatePersistedSelections(
@@ -340,6 +363,10 @@ public class TripPlanService {
 
     private long timelineRouteMinutes(SegmentTransportMode mode, Double originLatitude,
                                       Double originLongitude, Double destinationLatitude, Double destinationLongitude) {
+        if (routingService.isSameLocation(originLatitude, originLongitude,
+                destinationLatitude, destinationLongitude)) {
+            return 0L;
+        }
         // 시간표도 저장되는 이동 구간과 동일한 계산식/조회 결과를 쓴다.
         TransportSegment segment = createRoutedSegment(null, 0, mode, "출발", "도착",
                 originLatitude, originLongitude, destinationLatitude, destinationLongitude, null, null);
@@ -468,6 +495,7 @@ public class TripPlanService {
                 new HashMap<>();
 
         for (TripDay tripDay : trip.getTripDays()) {
+            if (days.stream().noneMatch(day -> java.util.Objects.equals(day.dayNumber(), tripDay.getDayNumber()))) continue;
             tripDay.clearPlanItems();
             tripDayMap.put(
                     tripDay.getDayNumber(),
@@ -523,6 +551,7 @@ public class TripPlanService {
                 new HashMap<>();
 
         for (TripDay tripDay : trip.getTripDays()) {
+            if (days.stream().noneMatch(day -> java.util.Objects.equals(day.dayNumber(), tripDay.getDayNumber()))) continue;
             tripDay.clearTransportSegments();
             tripDayMap.put(
                     tripDay.getDayNumber(),
@@ -861,6 +890,95 @@ public class TripPlanService {
         return result;
     }
 
+    /**
+     * CHECK_IN 직후 같은 숙소의 NIGHT_RETURN이 붙는 등 의미 없는 중복 숙소 일정을 제거한다.
+     * 이름의 공백/기호 차이와 5m 이내 좌표도 같은 숙소로 취급한다.
+     */
+    private List<TripPlanDayResponse> removeRedundantConsecutiveAccommodationStops(
+            List<TripPlanDayResponse> days
+    ) {
+        List<TripPlanDayResponse> result = new ArrayList<>();
+        for (TripPlanDayResponse day : days) {
+            List<TripPlanItemResponse> items = new ArrayList<>();
+            for (TripPlanItemResponse current : day.items()) {
+                if (!items.isEmpty()
+                        && isSameAccommodation(items.get(items.size() - 1), current)) {
+                    continue;
+                }
+                items.add(current);
+            }
+            result.add(new TripPlanDayResponse(
+                    day.dayNumber(), day.date(), applyOrders(items), List.of()
+            ));
+        }
+        return result;
+    }
+
+    /**
+     * 첫날은 체크인을 위해 숙소를 중간 방문했다가 곧바로 다시 나오는 동선을 만들지 않는다.
+     * 숙소 일정이 여러 개 들어와도 마지막 숙소 도착 한 건만 남겨 하루의 마지막 일정으로 사용한다.
+     */
+    List<TripPlanDayResponse> enforceFirstDaySingleAccommodationAtEnd(
+            List<TripPlanDayResponse> days
+    ) {
+        if (days.isEmpty()) {
+            return days;
+        }
+
+        TripPlanDayResponse firstDay = days.get(0);
+        TripPlanItemResponse finalAccommodation = null;
+        List<TripPlanItemResponse> normalizedItems = new ArrayList<>();
+
+        for (TripPlanItemResponse item : firstDay.items()) {
+            if (item.type() == TripPlanItemType.ACCOMMODATION) {
+                finalAccommodation = item;
+            } else {
+                normalizedItems.add(item);
+            }
+        }
+
+        if (finalAccommodation == null) {
+            return days;
+        }
+
+        normalizedItems.add(finalAccommodation);
+        List<TripPlanDayResponse> result = new ArrayList<>(days);
+        result.set(0, new TripPlanDayResponse(
+                firstDay.dayNumber(),
+                firstDay.date(),
+                applyOrders(normalizedItems),
+                List.of()
+        ));
+        return result;
+    }
+
+    private boolean isSameAccommodation(
+            TripPlanItemResponse previous,
+            TripPlanItemResponse current
+    ) {
+        if (previous.type() != TripPlanItemType.ACCOMMODATION
+                || current.type() != TripPlanItemType.ACCOMMODATION) {
+            return false;
+        }
+        if (previous.placeId() != null && previous.placeId().equals(current.placeId())) {
+            return true;
+        }
+        String previousName = normalizePlaceName(previous.name());
+        String currentName = normalizePlaceName(current.name());
+        if (!previousName.isEmpty() && previousName.equals(currentName)) {
+            return true;
+        }
+        return routingService.isSameLocation(
+                previous.latitude(), previous.longitude(),
+                current.latitude(), current.longitude()
+        );
+    }
+
+    private String normalizePlaceName(String name) {
+        return name == null ? "" : name.toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[^가-힣a-z0-9]", "");
+    }
+
     private TransportSegment createRoutedSegment(
             TripDay tripDay,
             int sequence,
@@ -880,6 +998,11 @@ public class TripPlanService {
                         || arrivalLatitude == null
                         || arrivalLongitude == null
         ) {
+            return null;
+        }
+
+        if (routingService.isSameLocation(departureLatitude, departureLongitude,
+                arrivalLatitude, arrivalLongitude)) {
             return null;
         }
 
@@ -1453,42 +1576,18 @@ public class TripPlanService {
                 }
             }
 
-            if (firstDay && !lastDay) {
-                LocalTime checkInTime =
-                        parseAccommodationTime(
-                                candidatePool.accommodation().checkInTime(),
-                                LocalTime.of(15, 0)
-                        );
-
-                items.add(
-                        accommodationItemWithCategory(
-                                candidatePool.accommodation(),
-                                date,
-                                checkInTime,
-                                localSegmentMode(trip),
-                                "CHECK_IN",
-                                "숙소 체크인 시간에 맞춰 체크인합니다. 이후 일정이 있으면 다시 외출합니다."
-                        )
-                );
-
-                items.sort(
-                        Comparator.comparingInt((TripPlanItemResponse item) ->
-                                        item.type() == TripPlanItemType.AIRPORT || item.type() == TripPlanItemType.FLIGHT
-                                                || item.type() == TripPlanItemType.DEPARTURE ? 0 : 1)
-                                .thenComparing(item -> item.startAt() == null ? LocalDateTime.MAX : item.startAt())
-                );
-            }
-
             if (!lastDay) {
 
                 items.add(
                         accommodationItemWithCategory(
                                 candidatePool.accommodation(),
                                 date,
-                                null,
+                                LocalTime.of(21, 0),
                                 localSegmentMode(trip),
                                 "NIGHT_RETURN",
-                                "저녁 식사와 현지 일정을 마친 뒤 선택한 숙소로 복귀합니다."
+                                firstDay
+                                        ? "첫날 관광과 저녁 식사를 모두 마친 뒤 선택한 숙소로 이동합니다."
+                                        : "저녁 식사와 현지 일정을 마친 뒤 선택한 숙소로 복귀합니다."
                         )
                 );
             }

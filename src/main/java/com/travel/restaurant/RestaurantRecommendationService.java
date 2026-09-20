@@ -10,6 +10,7 @@ import com.travel.restaurant.repository.RestaurantRepository;
 import com.travel.trip.entity.FoodPreference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -30,6 +31,9 @@ import java.util.stream.Collectors;
 
 @Service
 public class RestaurantRecommendationService {
+
+    @Value("${app.recommendation.bedrock-rerank-enabled:false}")
+    private boolean bedrockRerankEnabled;
 
     private static final Logger log =
             LoggerFactory.getLogger(
@@ -242,13 +246,9 @@ public class RestaurantRecommendationService {
 
         try {
 
-            aiDecisions =
-                    rerankWithBedrock(
-                            request,
-                            aiCandidates,
-                            menuMap,
-                            limit
-                    );
+            aiDecisions = bedrockRerankEnabled
+                    ? rerankWithBedrock(request, aiCandidates, menuMap, limit)
+                    : List.of();
 
         } catch (Exception e) {
 
