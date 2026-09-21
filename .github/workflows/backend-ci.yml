@@ -74,24 +74,50 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
       - name: Check ECR image scan
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           ECR_REPOSITORY: ai-travel-backend
           IMAGE_TAG: ${{ github.sha }}
         run: |
+          SCAN_FOUND=false
+
+          for attempt in {1..30}; do
+            if aws ecr describe-image-scan-findings \
+              --repository-name "$ECR_REPOSITORY" \
+              --image-id imageTag="$IMAGE_TAG" \
+              --region ap-northeast-2 \
+              > /dev/null 2>&1; then
+
+              SCAN_FOUND=true
+              echo "ECR image scan found."
+              break
+            fi
+
+            echo "Waiting for ECR image scan to start... ($attempt/30)"
+            sleep 10
+          done
+
+          if [ "$SCAN_FOUND" != "true" ]; then
+            echo "ECR image scan was not created within 300 seconds."
+            exit 1
+          fi
+
           aws ecr wait image-scan-complete \
             --repository-name "$ECR_REPOSITORY" \
-            --image-id imageTag="$IMAGE_TAG"
+            --image-id imageTag="$IMAGE_TAG" \
+            --region ap-northeast-2
 
           CRITICAL=$(aws ecr describe-image-scan-findings \
             --repository-name "$ECR_REPOSITORY" \
             --image-id imageTag="$IMAGE_TAG" \
+            --region ap-northeast-2 \
             --query 'imageScanFindings.findingSeverityCounts.CRITICAL || `0`' \
             --output text)
 
           HIGH=$(aws ecr describe-image-scan-findings \
             --repository-name "$ECR_REPOSITORY" \
             --image-id imageTag="$IMAGE_TAG" \
+            --region ap-northeast-2 \
             --query 'imageScanFindings.findingSeverityCounts.HIGH || `0`' \
             --output text)
 
