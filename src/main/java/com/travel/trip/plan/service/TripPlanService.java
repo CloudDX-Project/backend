@@ -3,6 +3,7 @@ package com.travel.trip.plan.service;
 import com.travel.flight.dto.FlightCandidate;
 import com.travel.global.exception.BusinessException;
 import com.travel.global.exception.ErrorCode;
+import com.travel.global.time.ScheduleTime;
 import com.travel.routing.dto.DrivingRouteResult;
 import com.travel.routing.dto.RoutePoint;
 import com.travel.routing.service.RoutingService;
@@ -425,7 +426,7 @@ public class TripPlanService {
             }
             LocalDateTime airportStart = useActualArrival ? arrivalAt : deadline;
             items.set(airportIndex, copyWithTimes(airport, airportStart, airport.endAt(),
-                    (int) ChronoUnit.MINUTES.between(airportStart, airport.endAt())));
+                    (int) ScheduleTime.minutesBetween(airportStart, airport.endAt())));
             result.add(new TripPlanDayResponse(day.dayNumber(), day.date(), applyOrders(items), List.of()));
         }
         return result;
@@ -439,7 +440,7 @@ public class TripPlanService {
         if (item.startAt() != null
                 && item.endAt() != null
                 && item.endAt().isAfter(item.startAt())) {
-            long minutes = ChronoUnit.MINUTES.between(item.startAt(), item.endAt());
+            long minutes = ScheduleTime.minutesBetween(item.startAt(), item.endAt());
             if (minutes > 0 && minutes <= 240) {
                 return (int) minutes;
             }
@@ -1315,10 +1316,7 @@ public class TripPlanService {
 
         return Math.max(
                 0L,
-                ChronoUnit.MINUTES.between(
-                        departureAt,
-                        arrivalAt
-                )
+                ScheduleTime.minutesBetween(departureAt, arrivalAt)
         );
     }
 

@@ -1,0 +1,23 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: travel-redis
+
+    ports:
+      - "127.0.0.1:6379:6379"
+
+    # Local disposable cache only. Never share this instance with refresh tokens.
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+    volumes:
+      - redis-data:/data
+
+    restart: unless-stopped
+
+volumes:
+  redis-data:
