@@ -16,7 +16,11 @@ class BedrockJsonTest {
     void rejectsMissingOrInvalidJson() {
         assertThatThrownBy(() -> BedrockJson.extractObject(null))
                 .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> BedrockJson.extractObject("   "))
+                .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> BedrockJson.extractObject("plain text"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> BedrockJson.extractObject("} invalid {"))
                 .isInstanceOf(IllegalStateException.class);
     }
 }
