@@ -210,10 +210,8 @@ public class TripPlanCandidateService {
             List<TripPlanCandidatePool.AttractionCandidate> attractions,
             TripPlanCandidatePool.MandatoryDestination destination
     ) {
-        String targetName = normalizeName(destination.name());
-
         for (TripPlanCandidatePool.AttractionCandidate item : attractions) {
-            if (normalizeName(item.name()).equals(targetName)) {
+            if (samePlaceName(item.name(), destination.name())) {
                 ArrayList<TripPlanCandidatePool.AttractionCandidate> result =
                         new ArrayList<>();
 
@@ -454,11 +452,28 @@ public class TripPlanCandidateService {
         return "C:" + id;
     }
 
-    private String normalizeName(String value) {
+    static boolean samePlaceName(String first, String second) {
+        String left = normalizeName(first);
+        String right = normalizeName(second);
+
+        if (left.isEmpty() || right.isEmpty()) {
+            return false;
+        }
+
+        if (left.equals(right)) {
+            return true;
+        }
+
+        int shorterLength = Math.min(left.length(), right.length());
+        return shorterLength >= 4
+                && (left.endsWith(right) || right.endsWith(left));
+    }
+
+    private static String normalizeName(String value) {
         return value == null
                 ? ""
-                : value.replaceAll("\\s+", "")
-                .toLowerCase();
+                : value.replaceAll("[^가-힣a-zA-Z0-9]", "")
+                .toLowerCase(java.util.Locale.ROOT);
     }
 
     private TripPlanSelectedAccommodation resolveSelectedAccommodation(

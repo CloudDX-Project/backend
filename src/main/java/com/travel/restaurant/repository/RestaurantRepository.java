@@ -45,6 +45,10 @@ public class RestaurantRepository {
             FROM restaurants
             WHERE latitude IS NOT NULL
               AND longitude IS NOT NULL
+              AND (
+                    last_scrape_status IS NULL
+                    OR UPPER(last_scrape_status) NOT IN ('FAILED', 'CLOSED', 'PERMANENTLY_CLOSED')
+              )
             """;
 
 

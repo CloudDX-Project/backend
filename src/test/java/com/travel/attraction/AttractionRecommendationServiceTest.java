@@ -33,6 +33,7 @@ class AttractionRecommendationServiceTest {
         when(attraction.tags()).thenReturn("해변 바다 산책");
         when(attraction.allTags()).thenReturn("제주 자연 힐링");
         when(attraction.introduction()).thenReturn("바다를 따라 걷는 야외 관광지");
+        when(attraction.representativeImageUrl()).thenReturn("https://example.com/handam.jpg");
         when(repository.findAllRecommendable()).thenReturn(List.of(attraction));
 
         BedrockClient bedrockClient = mock(BedrockClient.class);
@@ -72,5 +73,38 @@ class AttractionRecommendationServiceTest {
 
         assertThat(response.attractions()).isEmpty();
         assertThat(response.requestedLimit()).isEqualTo(12);
+    }
+
+    @Test
+    void filtersAdministrativeOrganizationsFromTouristRecommendations() {
+        TouristAttractionRepository repository = mock(TouristAttractionRepository.class);
+        TouristAttractionData landmark = attraction("성산일출봉", "성산일출봉 자연 유산", "일출 오름 유네스코");
+        TouristAttractionData organization = attraction("유수암농촌체험휴양마을협의회", "지역 운영 조직", "체험 관광");
+        when(repository.findAllRecommendable()).thenReturn(List.of(organization, landmark));
+
+        AttractionRecommendationService service = new AttractionRecommendationService(
+                repository, mock(BedrockClient.class), JsonMapper.builder().build());
+
+        var response = service.recommend(new AttractionRecommendRequest(
+                33.45, 126.30, List.of(TripPreference.SIGHTSEEING),
+                WeatherCondition.SUNNY, TripPace.BALANCED, 10));
+
+        assertThat(response.attractions()).extracting("name")
+                .containsExactly("성산일출봉");
+    }
+
+    private TouristAttractionData attraction(String name, String introduction, String tags) {
+        TouristAttractionData attraction = mock(TouristAttractionData.class);
+        when(attraction.id()).thenReturn((long) Math.abs(name.hashCode()));
+        when(attraction.providerId()).thenReturn("visit-jeju-" + Math.abs(name.hashCode()));
+        when(attraction.name()).thenReturn(name);
+        when(attraction.categoryName()).thenReturn("관광지");
+        when(attraction.latitude()).thenReturn(33.45);
+        when(attraction.longitude()).thenReturn(126.30);
+        when(attraction.introduction()).thenReturn(introduction);
+        when(attraction.tags()).thenReturn(tags);
+        when(attraction.allTags()).thenReturn(tags);
+        when(attraction.representativeImageUrl()).thenReturn("https://example.com/photo.jpg");
+        return attraction;
     }
 }

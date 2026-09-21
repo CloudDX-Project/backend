@@ -67,6 +67,31 @@ class RestaurantServicesTest {
         assertThat(response.restaurants().getFirst().distanceKm()).isNotNegative();
     }
 
+    @Test
+    void recommendationPrefersRestaurantsWithReliableReviewDataWhenEnoughExist() {
+        RestaurantRepository repository = mock(RestaurantRepository.class);
+        RestaurantData unknown = restaurant(10L, "정보 없는 식당", 33.4501, 126.3001);
+        when(unknown.rating()).thenReturn(null);
+        when(unknown.reviewCount()).thenReturn(0);
+
+        List<RestaurantData> trusted = java.util.stream.LongStream.rangeClosed(20, 27)
+                .mapToObj(id -> restaurant(id, "제주 대표 맛집 " + id, 33.45, 126.30))
+                .toList();
+        java.util.ArrayList<RestaurantData> all = new java.util.ArrayList<>(trusted);
+        all.add(unknown);
+        when(repository.findAllLocated()).thenReturn(all);
+        when(repository.findMenusByRestaurantIds(anyList())).thenReturn(Map.of());
+
+        RestaurantRecommendationService service = new RestaurantRecommendationService(
+                repository, mock(BedrockClient.class), JsonMapper.builder().build());
+        var response = service.recommend(new RestaurantRecommendRequest(
+                33.45, 126.30, Set.of(TripPreference.FOOD),
+                Set.of(FoodPreference.KOREAN), 8));
+
+        assertThat(response.restaurants()).extracting("restaurantName")
+                .doesNotContain("정보 없는 식당");
+    }
+
     private RestaurantData restaurant(Long id, String name, double latitude, double longitude) {
         RestaurantData restaurant = mock(RestaurantData.class);
         when(restaurant.id()).thenReturn(id);

@@ -163,6 +163,14 @@ public class RestaurantRecommendationService {
                         request.resolvedFoodPreferences()
                 );
 
+        List<RestaurantData> trustedRestaurants = categoryMatched.stream()
+                .filter(this::hasTrustworthyPublicData)
+                .toList();
+
+        if (trustedRestaurants.size() >= Math.min(limit, 8)) {
+            categoryMatched = trustedRestaurants;
+        }
+
         if (categoryMatched.isEmpty()) {
 
             return new RestaurantRecommendResponse(
@@ -382,38 +390,46 @@ public class RestaurantRecommendationService {
                         restaurant
                 );
 
+        double reliabilityScore = calculateReliabilityScore(restaurant);
+
         /*
          * FOOD 여행이면:
          *
-         * 평점/리뷰 Bayesian 품질 65%
-         * 거리 10%
-         * 제주 로컬성 25%
+             * 평점/리뷰 Bayesian 품질 55%
+             * 거리 10%
+             * 제주 로컬성 20%
+             * 공개 정보 신뢰도 15%
          *
          * 일반 여행이면:
          *
-         * 평점/리뷰 Bayesian 품질 65%
-         * 거리 15%
-         * 제주 로컬성 20%
+             * 평점/리뷰 Bayesian 품질 55%
+             * 거리 15%
+             * 제주 로컬성 15%
+             * 공개 정보 신뢰도 15%
          */
         double baseScore;
 
         if (request.foodFocused()) {
 
             baseScore =
-                    ratingScore * 0.65
+                    ratingScore * 0.55
                             +
                             distanceScore * 0.10
                             +
-                            localScore * 0.25;
+                            localScore * 0.20
+                            +
+                            reliabilityScore * 0.15;
 
         } else {
 
             baseScore =
-                    ratingScore * 0.65
+                    ratingScore * 0.55
                             +
                             distanceScore * 0.15
                             +
-                            localScore * 0.20;
+                            localScore * 0.15
+                            +
+                            reliabilityScore * 0.15;
         }
 
         return new ScoredRestaurant(
@@ -435,12 +451,40 @@ public class RestaurantRecommendationService {
 
                 localScore,
 
+                reliabilityScore,
+
                 RecommendationMath.clamp(
                         baseScore,
                         0.0,
                         1.0
                 )
         );
+    }
+
+    private boolean hasTrustworthyPublicData(RestaurantData restaurant) {
+        double rating = restaurant.rating() == null ? 0.0 : restaurant.rating();
+        int reviews = restaurant.reviewCount() == null ? 0 : restaurant.reviewCount();
+        return (rating >= 3.5 && reviews >= 10) || reviews >= 100;
+    }
+
+    private double calculateReliabilityScore(RestaurantData restaurant) {
+        double score = 0.0;
+        if (validRating(restaurant.rating())) {
+            score += 0.25;
+        }
+        int reviews = restaurant.reviewCount() == null ? 0 : Math.max(0, restaurant.reviewCount());
+        score += Math.min(0.35, Math.log1p(reviews) / Math.log1p(1000.0) * 0.35);
+        if (restaurant.representativeImageUrl() != null && !restaurant.representativeImageUrl().isBlank()) {
+            score += 0.15;
+        }
+        if (restaurant.businessHours() != null && !restaurant.businessHours().isBlank()) {
+            score += 0.15;
+        }
+        if ((restaurant.summary() != null && !restaurant.summary().isBlank())
+                || (restaurant.tags() != null && !restaurant.tags().isBlank())) {
+            score += 0.10;
+        }
+        return RecommendationMath.clamp(score, 0.0, 1.0);
     }
 
     /**
@@ -1336,6 +1380,8 @@ public class RestaurantRecommendationService {
             double distanceScore,
 
             double localScore,
+
+            double reliabilityScore,
 
             double baseScore
 

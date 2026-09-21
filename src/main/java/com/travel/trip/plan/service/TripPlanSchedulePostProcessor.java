@@ -41,8 +41,9 @@ public class TripPlanSchedulePostProcessor {
     private static final LocalTime DINNER_AT = LocalTime.of(18, 30);
     private static final LocalTime FIRST_DAY_DINNER_EARLIEST = LocalTime.of(17, 30);
     private static final LocalTime DINNER_FALLBACK_EARLIEST = LocalTime.of(17, 0);
-    private static final int LONG_IDLE_GAP_MINUTES = 90;
+    private static final int LONG_IDLE_GAP_MINUTES = 75;
     private static final int MAX_GAP_CANDIDATE_CHECKS = 6;
+    private static final int MAX_GAP_INSERTIONS = 2;
     private static final double MIN_BREAKFAST_FIT_SCORE = 0.50;
 
     private final RoutingService routingService;
@@ -239,13 +240,26 @@ public class TripPlanSchedulePostProcessor {
                     continue;
                 }
 
-                CandidateVisit visit = findGapVisit(
-                        trip, candidatePool, current, currentEnd, next, nextStart, usedKeys
-                );
-                if (visit != null) {
+                TripPlanItemResponse gapCursor = current;
+                LocalDateTime gapCursorEnd = currentEnd;
+                int inserted = 0;
+
+                while (inserted < MAX_GAP_INSERTIONS
+                        && ScheduleTime.minutesBetween(gapCursorEnd, nextStart) >= LONG_IDLE_GAP_MINUTES) {
+                    CandidateVisit visit = findGapVisit(
+                            trip, candidatePool, gapCursor, gapCursorEnd, next, nextStart, usedKeys
+                    );
+                    if (visit == null) {
+                        break;
+                    }
                     repaired.add(visit.item());
                     usedKeys.add(placeKey(visit.item().type(), visit.item().placeId()));
-                } else {
+                    gapCursor = visit.item();
+                    gapCursorEnd = endOrStart(visit.item());
+                    inserted++;
+                }
+
+                if (inserted == 0) {
                     TripPlanItemResponse shiftedDinner = shiftDinnerEarlier(
                             current, currentEnd, next, day.date()
                     );

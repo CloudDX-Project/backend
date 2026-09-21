@@ -67,25 +67,46 @@ public class AttractionRecommendationService {
     /*
      * 1차 정량 점수
      *
-     * 위치 15%
-     * 사용자 선호 50%
-     * 날씨 20%
-     * 여행 pace 15%
+     * 대표성 25%
+     * 정보 품질 20%
+     * 사용자 선호 25%
+     * 날씨 10%
+     * 여행 pace 10%
+     * 위치 10%
      *
      * 실제 도로 이동시간은 최종 TripPlan 후보 단계에서 Kakao Mobility로 보강한다.
      * 여기서는 가까운 장소가 품질/선호보다 과도하게 우선되지 않도록 거리 비중을 낮춘다.
      */
     private static final double DISTANCE_WEIGHT =
-            0.15;
+            0.10;
 
     private static final double PREFERENCE_WEIGHT =
-            0.50;
+            0.25;
 
     private static final double WEATHER_WEIGHT =
-            0.20;
+            0.10;
 
     private static final double PACE_WEIGHT =
-            0.15;
+            0.10;
+
+    private static final double QUALITY_WEIGHT =
+            0.20;
+
+    private static final double LANDMARK_WEIGHT =
+            0.25;
+
+    private static final List<String> NON_VISITOR_PLACE_MARKERS = List.of(
+            "협의회", "운영위원회", "주민센터", "행정복지센터", "사무소",
+            "마을회관", "복지회관", "자치회", "영농조합", "영어조합", "개발위원회"
+    );
+
+    private static final List<String> REPRESENTATIVE_LANDMARK_KEYWORDS = List.of(
+            "성산일출봉", "한라산", "우도", "섭지코지", "천지연폭포", "정방폭포",
+            "협재해수욕장", "함덕해수욕장", "금능해변", "한담해안산책로", "애월카페거리",
+            "오설록", "카멜리아힐", "새별오름", "산굼부리", "비자림", "만장굴",
+            "주상절리", "용두암", "동문시장", "아쿠아플라넷", "수목원테마파크",
+            "휴애리", "에코랜드", "쇠소깍", "사려니숲길", "송악산", "마라도"
+    );
 
     /*
      * 최종 점수
@@ -140,7 +161,10 @@ public class AttractionRecommendationService {
 
         List<TouristAttractionData> attractions =
                 attractionRepository
-                        .findAllRecommendable();
+                        .findAllRecommendable()
+                        .stream()
+                        .filter(this::isVisitorReadyAttraction)
+                        .toList();
 
         if (attractions.isEmpty()) {
 
@@ -297,6 +321,10 @@ public class AttractionRecommendationService {
                         request.resolvedPace()
                 );
 
+        double qualityScore = calculateQualityScore(attraction);
+
+        double landmarkScore = calculateLandmarkScore(attraction);
+
 
         double baseScore =
 
@@ -316,7 +344,17 @@ public class AttractionRecommendationService {
                         +
 
                         paceScore
-                                * PACE_WEIGHT;
+                                * PACE_WEIGHT
+
+                        +
+
+                        qualityScore
+                                * QUALITY_WEIGHT
+
+                        +
+
+                        landmarkScore
+                                * LANDMARK_WEIGHT;
 
 
         return new ScoredAttraction(
@@ -335,12 +373,73 @@ public class AttractionRecommendationService {
 
                 paceScore,
 
+                qualityScore,
+
+                landmarkScore,
+
                 RecommendationMath.clamp(
                         baseScore,
                         0.0,
                         1.0
                 )
         );
+    }
+
+    private boolean isVisitorReadyAttraction(TouristAttractionData attraction) {
+        String name = nullToEmpty(attraction.name()).trim();
+        if (name.isEmpty()) {
+            return false;
+        }
+
+        String normalizedName = name.replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+        if (NON_VISITOR_PLACE_MARKERS.stream().anyMatch(normalizedName::contains)) {
+            return false;
+        }
+
+        return calculateLandmarkScore(attraction) >= 1.0
+                || hasText(attraction.representativeImageUrl())
+                || hasText(attraction.thumbnailImageUrl())
+                || nullToEmpty(attraction.introduction()).trim().length() >= 35;
+    }
+
+    private double calculateQualityScore(TouristAttractionData attraction) {
+        double score = 0.0;
+        if (hasText(attraction.representativeImageUrl()) || hasText(attraction.thumbnailImageUrl())) {
+            score += 0.35;
+        }
+        if (nullToEmpty(attraction.introduction()).trim().length() >= 35) {
+            score += 0.30;
+        }
+        if (nullToEmpty(attraction.tags()).trim().length() >= 8
+                || nullToEmpty(attraction.allTags()).trim().length() >= 12) {
+            score += 0.20;
+        }
+        if (containsAny(attractionText(attraction), List.of(
+                "해변", "오름", "폭포", "숲", "공원", "박물관", "미술관", "시장",
+                "산책", "전망", "체험", "문화재", "유네스코", "정원", "동굴"))) {
+            score += 0.15;
+        }
+        return RecommendationMath.clamp(score, 0.0, 1.0);
+    }
+
+    private double calculateLandmarkScore(TouristAttractionData attraction) {
+        String normalizedName = nullToEmpty(attraction.name()).replaceAll("\\s+", "");
+        if (REPRESENTATIVE_LANDMARK_KEYWORDS.stream().anyMatch(normalizedName::contains)) {
+            return 1.0;
+        }
+
+        String text = attractionText(attraction);
+        if (containsAny(text, List.of("유네스코", "천연기념물", "국가지질공원", "대표관광지", "명승"))) {
+            return 0.85;
+        }
+        if (containsAny(text, List.of("해수욕장", "폭포", "오름", "박물관", "미술관", "수목원", "테마파크"))) {
+            return 0.60;
+        }
+        return 0.25;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
 
@@ -846,6 +945,9 @@ public class AttractionRecommendationService {
                             2
                     )
             );
+
+            item.put("qualityScore", RecommendationMath.round(candidate.qualityScore() * 100.0, 2));
+            item.put("landmarkScore", RecommendationMath.round(candidate.landmarkScore() * 100.0, 2));
 
 
             candidateJson.add(
@@ -1358,6 +1460,10 @@ public class AttractionRecommendationService {
             double weatherScore,
 
             double paceScore,
+
+            double qualityScore,
+
+            double landmarkScore,
 
             double baseScore
 
