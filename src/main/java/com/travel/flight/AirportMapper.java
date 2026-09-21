@@ -2,8 +2,19 @@ package com.travel.flight;
 
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Component
 public class AirportMapper {
+
+    private static final List<String> JEJU_DESTINATION_KEYWORDS = List.of(
+            "제주", "서귀포", "애월", "한림", "협재", "금능", "곽지",
+            "조천", "함덕", "구좌", "성산", "우도", "표선",
+            "중문", "안덕", "대정", "한라산", "동문시장",
+            "한담해안산책로", "새별오름", "오설록티뮤지엄",
+            "카멜리아힐", "산방산", "용머리해안", "천제연폭포",
+            "천지연폭포", "정방폭포", "주상절리대", "섭지코지"
+    );
 
     public String resolve(String region) {
 
@@ -21,9 +32,7 @@ public class AirportMapper {
         /*
          * 제주
          */
-        if (
-                region.contains("제주")
-        ) {
+        if (isJejuDestination(region)) {
 
             return "CJU";
         }
@@ -192,5 +201,14 @@ public class AirportMapper {
                 "항공편 조회를 지원하지 않는 지역입니다: "
                         + region
         );
+    }
+
+    private boolean isJejuDestination(String region) {
+        String normalized = region
+                .replaceAll("[\\s·._-]+", "")
+                .toLowerCase();
+
+        return JEJU_DESTINATION_KEYWORDS.stream()
+                .anyMatch(normalized::contains);
     }
 }

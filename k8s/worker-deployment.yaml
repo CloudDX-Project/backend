@@ -21,7 +21,7 @@ spec:
 
       containers:
         - name: travel-worker
-          image: 782913119640.dkr.ecr.ap-northeast-2.amazonaws.com/ai-travel-backend:manual-3c0f892-20260922-0255
+          image: 782913119640.dkr.ecr.ap-northeast-2.amazonaws.com/ai-travel-backend:hotfix-jeju-airport-20260922-032328
 
           imagePullPolicy: Always
 

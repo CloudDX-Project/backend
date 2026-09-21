@@ -7,7 +7,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$backendRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$backendRoot = Split-Path -Parent $scriptRoot
 Set-Location $backendRoot
 
 function Run-Step([string]$Name, [scriptblock]$Action) {
