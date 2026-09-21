@@ -21,7 +21,7 @@ spec:
 
       containers:
         - name: travel-worker
-          image: 782913119640.dkr.ecr.ap-northeast-2.amazonaws.com/ai-travel-backend:latest
+          image: 782913119640.dkr.ecr.ap-northeast-2.amazonaws.com/ai-travel-backend:manual-3c0f892-20260922-0255
 
           imagePullPolicy: Always
 
@@ -54,3 +54,4 @@ spec:
             limits:
               cpu: "1000m"
               memory: "1Gi"
+
