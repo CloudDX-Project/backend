@@ -75,5 +75,14 @@ sonar {
     properties {
         property 'sonar.coverage.jacoco.xmlReportPaths',
                 layout.buildDirectory.file('reports/jacoco/test/jacocoTestReport.xml').get().asFile.path
+
+        // DTO/JPA wiring/configuration은 실행 로직이 아니라 선언적 매핑이므로
+        // 비즈니스 로직의 New Code Coverage를 왜곡하지 않도록 제외한다.
+        // Planner/Opinet/Fuel 계산 로직은 제외하지 않고 테스트로 커버한다.
+        property 'sonar.coverage.exclusions',
+                '**/trip/dto/TripCreateRequest.java,' +
+                '**/trip/dto/TripResponse.java,' +
+                '**/trip/entity/Trip.java,' +
+                '**/global/config/RedisConfig.java'
     }
 }

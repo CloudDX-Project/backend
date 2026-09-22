@@ -69,4 +69,64 @@ class TripPromptDayConstraintParserTest {
         assertThat(TripPromptDayConstraintParser.parse("성산일출봉은 2일차", 3, attractions)).isEmpty();
         assertThat(TripPromptDayConstraintParser.parse("새별오름은 2일차", 0, attractions)).isEmpty();
     }
+    @Test
+    void normalizesSpacesPunctuationAndKeepsLongestOverlappingName() {
+        List<TripPromptDayConstraintParser.DayConstraint> result =
+                TripPromptDayConstraintParser.parse(
+                        "한담 해안 산책로!! 3일차",
+                        3,
+                        List.of(
+                                new TripPromptDayConstraintParser.NamedAttraction(1L, "한담"),
+                                new TripPromptDayConstraintParser.NamedAttraction(2L, "한담해안산책로")
+                        )
+                );
+
+        assertThat(result)
+                .extracting(TripPromptDayConstraintParser.DayConstraint::attractionId)
+                .containsExactly(2L);
+    }
+
+    @Test
+    void ignoresBlankPlaceNameAndShortCandidateName() {
+        assertThat(TripPromptDayConstraintParser.requestedDayFor("한담 2일차", " ", 3)).isNull();
+
+        assertThat(TripPromptDayConstraintParser.parse(
+                "산 2일차",
+                3,
+                List.of(new TripPromptDayConstraintParser.NamedAttraction(1L, "산"))
+        )).isEmpty();
+    }
+
+    @Test
+    void firstMentionWinsForSameAttractionAcrossClauses() {
+        List<TripPromptDayConstraintParser.DayConstraint> result =
+                TripPromptDayConstraintParser.parse(
+                        "새별오름은 2일차, 그리고 새별오름은 3일차",
+                        3,
+                        List.of(new TripPromptDayConstraintParser.NamedAttraction(10L, "새별오름"))
+                );
+
+        assertThat(result).singleElement()
+                .extracting(TripPromptDayConstraintParser.DayConstraint::dayNumber)
+                .isEqualTo(2);
+    }
+
+    @Test
+    void ignoresNullCandidateEntriesAndDuplicateIds() {
+        List<TripPromptDayConstraintParser.DayConstraint> result =
+                TripPromptDayConstraintParser.parse(
+                        "새별오름 2일차",
+                        3,
+                        java.util.Arrays.asList(
+                                null,
+                                new TripPromptDayConstraintParser.NamedAttraction(10L, "새별오름"),
+                                new TripPromptDayConstraintParser.NamedAttraction(10L, "새별오름"),
+                                new TripPromptDayConstraintParser.NamedAttraction(null, "새별오름"),
+                                new TripPromptDayConstraintParser.NamedAttraction(20L, null)
+                        )
+                );
+
+        assertThat(result).hasSize(1);
+    }
+
 }

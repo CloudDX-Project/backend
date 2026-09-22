@@ -96,6 +96,38 @@ class OpinetFuelPriceClientTest {
                 .hasMessageContaining("HTTP 500");
     }
 
+    @Test
+    void rejectsMissingOilArrayAndConnectionFailure() throws Exception {
+        startServer(200, "{\"RESULT\":{}}");
+        OpinetFuelPriceClient client = new OpinetFuelPriceClient(baseUrl(), "test-key");
+
+        assertThatThrownBy(() -> client.getNationalAveragePricePerLiter(VehicleFuelType.GASOLINE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("응답이 비어");
+
+        server.stop(0);
+        server = null;
+        OpinetFuelPriceClient disconnected = new OpinetFuelPriceClient("http://127.0.0.1:1", "test-key");
+        assertThatThrownBy(() -> disconnected.getNationalAveragePricePerLiter(VehicleFuelType.GASOLINE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("API 연결");
+    }
+
+    @Test
+    void skipsBlankAndNegativePricesBeforeFindingValidValue() throws Exception {
+        startServer(200, """
+                {"RESULT":{"OIL":[
+                  {"PRODCD":"B027","PRICE":" "},
+                  {"PRODCD":"B027","PRICE":"-1"},
+                  {"PRODCD":"B027","PRICE":"1,800"}
+                ]}}
+                """);
+
+        OpinetFuelPriceClient client = new OpinetFuelPriceClient(baseUrl(), "test-key");
+        assertThat(client.getNationalAveragePricePerLiter(VehicleFuelType.GASOLINE))
+                .isEqualTo(1800.0);
+    }
+
     private void startServer(int status, String body) throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/avgAllPrice.do", exchange -> {
