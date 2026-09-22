@@ -3,55 +3,41 @@ kind: Deployment
 metadata:
   name: travel-worker
   namespace: travel
-
 spec:
   replicas: 1
-
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: travel-worker
-
   template:
     metadata:
       labels:
         app: travel-worker
-
     spec:
       serviceAccountName: ai-travel-worker-sa
-
       containers:
         - name: travel-worker
-          image: 782913119640.dkr.ecr.ap-northeast-2.amazonaws.com/ai-travel-backend:latest
-
-          imagePullPolicy: Always
-
+          # Argo CD가 k8s/kustomization.yaml의 newTag를 이 이미지에 주입한다.
+          image: 782913119640.dkr.ecr.ap-northeast-2.amazonaws.com/ai-travel-backend:opinet-final-20260922
+          imagePullPolicy: IfNotPresent
           env:
             - name: APP_RUNTIME_ROLE
-              value: worker
-
+              value: "worker"
             - name: SPRING_MAIN_WEB_APPLICATION_TYPE
-              value: none
-
+              value: "none"
             - name: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE
               value: "3"
-
             - name: SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE
               value: "1"
-
-
           envFrom:
             - configMapRef:
                 name: travel-backend-config
-
             - secretRef:
                 name: travel-backend-secret
-
           resources:
             requests:
               cpu: "250m"
               memory: "512Mi"
-
             limits:
               cpu: "1000m"
               memory: "1Gi"
-
