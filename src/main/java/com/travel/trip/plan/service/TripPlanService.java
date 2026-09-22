@@ -536,21 +536,33 @@ public class TripPlanService {
                 totalDays,
                 candidates
         )) {
-            boolean present = days.stream()
-                    .filter(day -> day.dayNumber() == constraint.dayNumber())
+            long totalOccurrences = days.stream()
                     .flatMap(day -> day.items().stream())
-                    .anyMatch(item ->
+                    .filter(item ->
                             item.type() == TripPlanItemType.ATTRACTION
                                     && constraint.attractionId().equals(item.placeId())
-                    );
+                    )
+                    .count();
 
-            if (!present) {
+            long requestedDayOccurrences = days.stream()
+                    .filter(day -> day.dayNumber() == constraint.dayNumber())
+                    .flatMap(day -> day.items().stream())
+                    .filter(item ->
+                            item.type() == TripPlanItemType.ATTRACTION
+                                    && constraint.attractionId().equals(item.placeId())
+                    )
+                    .count();
+
+            if (totalOccurrences != 1L || requestedDayOccurrences != 1L) {
                 throw new IllegalStateException(
-                        "최종 일정에서 프롬프트 관광지 일차 제약이 유지되지 않았습니다: "
+                        "최종 일정에서 프롬프트 관광지 일차 제약이 정확히 유지되지 않았습니다: "
                                 + constraint.attractionName()
                                 + " -> "
                                 + constraint.dayNumber()
-                                + "일차"
+                                + "일차, totalOccurrences="
+                                + totalOccurrences
+                                + ", requestedDayOccurrences="
+                                + requestedDayOccurrences
                 );
             }
         }
