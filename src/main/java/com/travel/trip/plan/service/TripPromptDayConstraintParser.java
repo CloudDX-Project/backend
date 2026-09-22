@@ -3,8 +3,10 @@ package com.travel.trip.plan.service;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -21,7 +23,39 @@ public final class TripPromptDayConstraintParser {
     private static final Pattern DAY_PATTERN =
             Pattern.compile("([1-9]\\d*)일차");
 
+    /**
+     * 쉼표/마침표/개행/"그리고" 단위로 먼저 분리한다.
+     * "새별오름 2일차, 한담해안산책로 3일차"처럼 여러 요청이 있을 때
+     * 앞 관광지의 일차가 뒤 관광지에 잘못 붙는 것을 방지한다.
+     */
+    private static final Pattern CLAUSE_SEPARATOR =
+            Pattern.compile("[,，;.!?\\n\\r]+|\\s*그리고\\s*");
+
     private TripPromptDayConstraintParser() {
+    }
+
+    /**
+     * 이전 테스트/호출부와의 호환을 위한 단일 관광지 조회 API다.
+     * 실제 구현은 parse(...)와 동일한 규칙을 사용하므로 프롬프트 해석 로직이
+     * 두 군데로 갈라지지 않는다.
+     */
+    static Integer requestedDayFor(
+            String prompt,
+            String placeName,
+            int totalDays
+    ) {
+        if (placeName == null || placeName.isBlank()) {
+            return null;
+        }
+
+        return parse(
+                prompt,
+                totalDays,
+                List.of(new NamedAttraction(1L, placeName))
+        ).stream()
+                .findFirst()
+                .map(DayConstraint::dayNumber)
+                .orElse(null);
     }
 
     public static List<DayConstraint> parse(
@@ -36,7 +70,35 @@ public final class TripPromptDayConstraintParser {
             return List.of();
         }
 
-        String normalizedPrompt = normalize(prompt);
+        Map<Long, DayConstraint> selectedByAttractionId = new LinkedHashMap<>();
+
+        for (String clause : CLAUSE_SEPARATOR.split(prompt)) {
+            if (clause == null || clause.isBlank()) {
+                continue;
+            }
+
+            for (DayConstraint constraint : parseClause(clause, totalDays, attractions)) {
+                selectedByAttractionId.putIfAbsent(
+                        constraint.attractionId(),
+                        constraint
+                );
+            }
+        }
+
+        List<DayConstraint> result = new ArrayList<>(selectedByAttractionId.values());
+        result.sort(Comparator
+                .comparingInt(DayConstraint::dayNumber)
+                .thenComparing(DayConstraint::attractionName));
+
+        return List.copyOf(result);
+    }
+
+    private static List<DayConstraint> parseClause(
+            String clause,
+            int totalDays,
+            List<NamedAttraction> attractions
+    ) {
+        String normalizedPrompt = normalize(clause);
         if (normalizedPrompt.isBlank()) {
             return List.of();
         }
@@ -116,11 +178,7 @@ public final class TripPromptDayConstraintParser {
             ));
         }
 
-        result.sort(Comparator
-                .comparingInt(DayConstraint::dayNumber)
-                .thenComparing(DayConstraint::attractionName));
-
-        return List.copyOf(result);
+        return result;
     }
 
     private static List<DayOccurrence> findDays(
@@ -158,15 +216,27 @@ public final class TripPromptDayConstraintParser {
             int attractionEnd,
             List<DayOccurrence> days
     ) {
-        int attractionCenter = (attractionStart + attractionEnd) / 2;
         DayOccurrence best = null;
         int bestDistance = Integer.MAX_VALUE;
+        boolean bestIsAfter = false;
 
         for (DayOccurrence day : days) {
-            int dayCenter = (day.start() + day.end()) / 2;
-            int distance = Math.abs(attractionCenter - dayCenter);
-            if (distance < bestDistance) {
+            boolean isAfter = day.start() >= attractionEnd;
+            int distance;
+
+            if (day.end() <= attractionStart) {
+                distance = attractionStart - day.end();
+            } else if (isAfter) {
+                distance = day.start() - attractionEnd;
+            } else {
+                distance = 0;
+            }
+
+            // 거리가 같으면 "관광지 -> N일차" 표현을 우선한다.
+            if (distance < bestDistance
+                    || (distance == bestDistance && isAfter && !bestIsAfter)) {
                 bestDistance = distance;
+                bestIsAfter = isAfter;
                 best = new DayOccurrence(
                         day.dayNumber(),
                         day.start(),

@@ -33,8 +33,8 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
-      - name: Build and Test
-        run: ./gradlew clean build --no-daemon
+      - name: Build, Test and JaCoCo report
+        run: ./gradlew clean build jacocoTestReport --no-daemon
 
       - name: SonarQube Cloud Analysis
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
