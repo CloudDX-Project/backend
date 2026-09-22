@@ -37,8 +37,10 @@ import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -155,13 +157,19 @@ public class TripPlanService {
         days = schedulePostProcessor.fillLongIdleGaps(trip, candidatePool, days);
         days = schedulePostProcessor.releaseNightReturnDeadlines(days);
         days = reflowPlanTimesWithActualRoutes(trip, days);
-        days = enforceReturnFlightDeadline(trip, days, false);
+        days = enforceReturnFlightDeadline(trip, candidatePool, days, false);
         days = schedulePostProcessor.fillLastDayByActualSlack(trip, candidatePool, days);
         days = reflowPlanTimesWithActualRoutes(trip, days);
-        days = enforceReturnFlightDeadline(trip, days, true);
+        days = enforceReturnFlightDeadline(trip, candidatePool, days, true);
         days = enforceFirstDaySingleAccommodationAtEnd(days);
         days = removeRedundantConsecutiveAccommodationStops(days);
         days = schedulePostProcessor.normalizeMealRoleAfterRouting(days);
+
+        validatePromptDayConstraintsPreserved(
+                trip,
+                candidatePool,
+                days
+        );
 
         persistPlanItems(
                 trip,
@@ -375,13 +383,38 @@ public class TripPlanService {
         return segment.getDurationMinutes();
     }
 
-    /** 항공편은 이동시키지 않는다. 마감 초과 시 선택 일정을 뒤에서부터 제거한다. */
+    /**
+     * 기존 단위 테스트/호출 호환용. 프롬프트 보호가 필요 없는 경우의 기존 동작이다.
+     */
     private List<TripPlanDayResponse> enforceReturnFlightDeadline(
             Trip trip, List<TripPlanDayResponse> days, boolean useActualArrival
+    ) {
+        return enforceReturnFlightDeadline(
+                trip,
+                null,
+                days,
+                useActualArrival
+        );
+    }
+
+    /** 항공편은 이동시키지 않는다. 마감 초과 시 선택 일정을 뒤에서부터 제거한다. */
+    private List<TripPlanDayResponse> enforceReturnFlightDeadline(
+            Trip trip,
+            TripPlanCandidatePool candidatePool,
+            List<TripPlanDayResponse> days,
+            boolean useActualArrival
     ) {
         List<TripPlanDayResponse> result = new ArrayList<>();
         for (TripPlanDayResponse day : days) {
             List<TripPlanItemResponse> items = new ArrayList<>(day.items());
+            Set<Long> promptRequiredAttractionIds =
+                    candidatePool == null
+                            ? Set.of()
+                            : promptRequiredAttractionIds(
+                            trip,
+                            candidatePool,
+                            day.dayNumber()
+                    );
             int airportIndex = -1;
             for (int i = 0; i < items.size(); i++) {
                 if (isReturnDepartureAirport(items.get(i))) { airportIndex = i; break; }
@@ -401,7 +434,15 @@ public class TripPlanService {
 
                 int removable = -1;
                 for (int i = airportIndex - 1; i >= 0; i--) {
-                    TripPlanItemType type = items.get(i).type();
+                    TripPlanItemResponse candidate = items.get(i);
+                    TripPlanItemType type = candidate.type();
+
+                    if (type == TripPlanItemType.ATTRACTION
+                            && candidate.placeId() != null
+                            && promptRequiredAttractionIds.contains(candidate.placeId())) {
+                        continue;
+                    }
+
                     if (type == TripPlanItemType.ATTRACTION || type == TripPlanItemType.CAFE
                             || type == TripPlanItemType.RESTAURANT) { removable = i; break; }
                 }
@@ -430,6 +471,89 @@ public class TripPlanService {
             result.add(new TripPlanDayResponse(day.dayNumber(), day.date(), applyOrders(items), List.of()));
         }
         return result;
+    }
+
+    private Set<Long> promptRequiredAttractionIds(
+            Trip trip,
+            TripPlanCandidatePool candidatePool,
+            int dayNumber
+    ) {
+        if (trip.getPrompt() == null || trip.getPrompt().isBlank()) {
+            return Set.of();
+        }
+
+        int totalDays = (int) ChronoUnit.DAYS.between(
+                trip.getStartDate(),
+                trip.getEndDate()
+        ) + 1;
+
+        List<TripPromptDayConstraintParser.NamedAttraction> candidates =
+                candidatePool.attractions().stream()
+                        .map(item -> new TripPromptDayConstraintParser.NamedAttraction(
+                                item.id(),
+                                item.name()
+                        ))
+                        .toList();
+
+        Set<Long> result = new HashSet<>();
+        TripPromptDayConstraintParser.parse(
+                        trip.getPrompt(),
+                        totalDays,
+                        candidates
+                ).stream()
+                .filter(item -> item.dayNumber() == dayNumber)
+                .map(TripPromptDayConstraintParser.DayConstraint::attractionId)
+                .forEach(result::add);
+
+        return result;
+    }
+
+    private void validatePromptDayConstraintsPreserved(
+            Trip trip,
+            TripPlanCandidatePool candidatePool,
+            List<TripPlanDayResponse> days
+    ) {
+        if (trip.getPrompt() == null || trip.getPrompt().isBlank()) {
+            return;
+        }
+
+        int totalDays = (int) ChronoUnit.DAYS.between(
+                trip.getStartDate(),
+                trip.getEndDate()
+        ) + 1;
+
+        List<TripPromptDayConstraintParser.NamedAttraction> candidates =
+                candidatePool.attractions().stream()
+                        .map(item -> new TripPromptDayConstraintParser.NamedAttraction(
+                                item.id(),
+                                item.name()
+                        ))
+                        .toList();
+
+        for (TripPromptDayConstraintParser.DayConstraint constraint
+                : TripPromptDayConstraintParser.parse(
+                trip.getPrompt(),
+                totalDays,
+                candidates
+        )) {
+            boolean present = days.stream()
+                    .filter(day -> day.dayNumber() == constraint.dayNumber())
+                    .flatMap(day -> day.items().stream())
+                    .anyMatch(item ->
+                            item.type() == TripPlanItemType.ATTRACTION
+                                    && constraint.attractionId().equals(item.placeId())
+                    );
+
+            if (!present) {
+                throw new IllegalStateException(
+                        "최종 일정에서 프롬프트 관광지 일차 제약이 유지되지 않았습니다: "
+                                + constraint.attractionName()
+                                + " -> "
+                                + constraint.dayNumber()
+                                + "일차"
+                );
+            }
+        }
     }
 
     private int resolveStayMinutes(TripPlanItemResponse item) {

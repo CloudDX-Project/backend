@@ -117,6 +117,7 @@ public class TripPlanSchedulePostProcessor {
 
             List<TripPlanItemResponse> repaired = buildMiddleDaySchedule(
                     trip,
+                    candidatePool,
                     day,
                     selected
             );
@@ -467,6 +468,7 @@ public class TripPlanSchedulePostProcessor {
 
     private List<TripPlanItemResponse> buildMiddleDaySchedule(
             Trip trip,
+            TripPlanCandidatePool candidatePool,
             TripPlanDayResponse day,
             EnumMap<MealSlot, TripPlanCandidatePool.RestaurantCandidate> selected
     ) {
@@ -479,10 +481,20 @@ public class TripPlanSchedulePostProcessor {
                 .findFirst()
                 .orElse(null);
 
+        Set<Long> promptRequiredAttractionIds =
+                promptRequiredAttractionIds(
+                        trip,
+                        candidatePool,
+                        day.dayNumber()
+                );
+
         List<TripPlanItemResponse> flexible = day.items().stream()
                 .filter(item -> item.type() == TripPlanItemType.ATTRACTION
                         || item.type() == TripPlanItemType.CAFE)
-                .sorted(itemTimeComparator())
+                .sorted(Comparator
+                        .comparing((TripPlanItemResponse item) ->
+                                !isPromptRequiredAttraction(item, promptRequiredAttractionIds))
+                        .thenComparing(itemTimeComparator()))
                 .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
 
         List<TripPlanItemResponse> result = new ArrayList<>();
@@ -504,7 +516,8 @@ public class TripPlanSchedulePostProcessor {
                 flexible,
                 lunch,
                 day.date().atTime(LocalTime.of(9, 0)),
-                day.date().atTime(LocalTime.of(11, 30))
+                day.date().atTime(LocalTime.of(11, 30)),
+                promptRequiredAttractionIds
         );
         if (lunch != null) {
             lunch = alignAnchorAfterPrevious(result, lunch);
@@ -516,7 +529,8 @@ public class TripPlanSchedulePostProcessor {
                 flexible,
                 dinner,
                 day.date().atTime(LocalTime.of(14, 0)),
-                day.date().atTime(LocalTime.of(17, 30))
+                day.date().atTime(LocalTime.of(17, 30)),
+                promptRequiredAttractionIds
         );
         if (dinner != null) {
             dinner = alignAnchorAfterPrevious(result, dinner);
@@ -556,16 +570,23 @@ public class TripPlanSchedulePostProcessor {
             List<TripPlanItemResponse> remaining,
             TripPlanItemResponse nextMeal,
             LocalDateTime originalStartInclusive,
-            LocalDateTime originalStartExclusive
+            LocalDateTime originalStartExclusive,
+            Set<Long> promptRequiredAttractionIds
     ) {
         if (scheduled.isEmpty() || nextMeal == null) {
             return;
         }
 
         List<TripPlanItemResponse> candidates = remaining.stream()
-                .filter(item -> item.startAt() == null
-                        || (!item.startAt().isBefore(originalStartInclusive)
-                        && item.startAt().isBefore(originalStartExclusive)))
+                .filter(item ->
+                        isPromptRequiredAttraction(item, promptRequiredAttractionIds)
+                                || item.startAt() == null
+                                || (!item.startAt().isBefore(originalStartInclusive)
+                                && item.startAt().isBefore(originalStartExclusive)))
+                .sorted(Comparator
+                        .comparing((TripPlanItemResponse item) ->
+                                !isPromptRequiredAttraction(item, promptRequiredAttractionIds))
+                        .thenComparing(itemTimeComparator()))
                 .toList();
 
         for (TripPlanItemResponse candidate : candidates) {
@@ -607,6 +628,50 @@ public class TripPlanSchedulePostProcessor {
             ));
             remaining.remove(candidate);
         }
+    }
+
+    private Set<Long> promptRequiredAttractionIds(
+            Trip trip,
+            TripPlanCandidatePool candidatePool,
+            int dayNumber
+    ) {
+        if (trip.getPrompt() == null || trip.getPrompt().isBlank()) {
+            return Set.of();
+        }
+
+        int totalDays = (int) java.time.temporal.ChronoUnit.DAYS.between(
+                trip.getStartDate(),
+                trip.getEndDate()
+        ) + 1;
+
+        List<TripPromptDayConstraintParser.NamedAttraction> candidates =
+                candidatePool.attractions().stream()
+                        .map(item -> new TripPromptDayConstraintParser.NamedAttraction(
+                                item.id(),
+                                item.name()
+                        ))
+                        .toList();
+
+        Set<Long> result = new HashSet<>();
+        TripPromptDayConstraintParser.parse(
+                        trip.getPrompt(),
+                        totalDays,
+                        candidates
+                ).stream()
+                .filter(item -> item.dayNumber() == dayNumber)
+                .map(TripPromptDayConstraintParser.DayConstraint::attractionId)
+                .forEach(result::add);
+
+        return result;
+    }
+
+    private boolean isPromptRequiredAttraction(
+            TripPlanItemResponse item,
+            Set<Long> promptRequiredAttractionIds
+    ) {
+        return item.type() == TripPlanItemType.ATTRACTION
+                && item.placeId() != null
+                && promptRequiredAttractionIds.contains(item.placeId());
     }
 
     private TripPlanItemResponse alignAnchorAfterPrevious(

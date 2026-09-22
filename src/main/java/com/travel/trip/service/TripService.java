@@ -548,6 +548,10 @@ public class TripService {
                                 request.foodPreferences()
                         )
 
+                        .prompt(
+                                request.prompt()
+                        )
+
                         .build();
 
         attachAccommodation(

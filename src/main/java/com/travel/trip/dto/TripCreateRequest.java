@@ -140,6 +140,16 @@ public record TripCreateRequest(
         Set<FoodPreference> foodPreferences,
 
         /*
+         * 자유 입력은 현재 "관광지 + N일차" 제약만 해석한다.
+         * 그 외 문장은 일정 생성 규칙에 영향을 주지 않는다.
+         */
+        @Size(
+                max = 1000,
+                message = "여행 요청은 최대 1000자까지 입력할 수 있습니다."
+        )
+        String prompt,
+
+        /*
          * 메인 화면에서 사용자가 직접 선택한 숙소.
          */
         @NotNull(message = "선택 숙소 ID는 필수입니다.")

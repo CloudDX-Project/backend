@@ -53,6 +53,8 @@ public record TripResponse(
 
         Set<FoodPreference> foodPreferences,
 
+        String prompt,
+
         TripSelectedAccommodationResponse selectedAccommodation,
 
         TripSelectedRentalResponse selectedRental,
@@ -103,6 +105,8 @@ public record TripResponse(
                 Set.copyOf(
                         trip.getFoodPreferences()
                 ),
+
+                trip.getPrompt(),
 
                 TripSelectedAccommodationResponse.from(
                         trip.getSelectedAccommodation()

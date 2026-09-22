@@ -1,5 +1,7 @@
 package com.travel.trip.plan.service;
 
+import com.travel.attraction.data.TouristAttractionData;
+import com.travel.attraction.repository.TouristAttractionRepository;
 import com.travel.external.route.KakaoMobilityMultiDestinationClient;
 import com.travel.global.exception.BusinessException;
 import com.travel.global.exception.ErrorCode;
@@ -17,7 +19,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,15 +40,18 @@ public class TripPlanCandidateService {
     private final WeatherService weatherService;
     private final TripPlanDomainCandidateCacheService domainCandidateCacheService;
     private final KakaoMobilityMultiDestinationClient multiDestinationClient;
+    private final TouristAttractionRepository touristAttractionRepository;
 
     public TripPlanCandidateService(
             WeatherService weatherService,
             TripPlanDomainCandidateCacheService domainCandidateCacheService,
-            KakaoMobilityMultiDestinationClient multiDestinationClient
+            KakaoMobilityMultiDestinationClient multiDestinationClient,
+            TouristAttractionRepository touristAttractionRepository
     ) {
         this.weatherService = weatherService;
         this.domainCandidateCacheService = domainCandidateCacheService;
         this.multiDestinationClient = multiDestinationClient;
+        this.touristAttractionRepository = touristAttractionRepository;
     }
 
     public TripPlanCandidatePool buildCandidatePool(
@@ -94,6 +101,11 @@ public class TripPlanCandidateService {
                                 trip.getPace()
                         )
                 );
+
+        attractions = ensurePromptAttractions(
+                trip,
+                attractions
+        );
 
         List<TripPlanCandidatePool.RestaurantCandidate> restaurants =
                 new ArrayList<>(
@@ -181,6 +193,90 @@ public class TripPlanCandidateService {
                 List.copyOf(cafes),
                 List.copyOf(weather)
         );
+    }
+
+    /**
+     * 프롬프트는 기존 추천 후보를 대체하지 않는다.
+     * 사용자가 "관광지 + N일차"를 지정했는데 그 관광지가 상위 추천 30개 밖에 있으면
+     * 해당 관광지만 후보 풀에 추가해서 Bedrock이 처음부터 그 장소를 포함한 동선을 만들 수 있게 한다.
+     */
+    private List<TripPlanCandidatePool.AttractionCandidate> ensurePromptAttractions(
+            Trip trip,
+            List<TripPlanCandidatePool.AttractionCandidate> attractions
+    ) {
+        if (trip.getPrompt() == null || trip.getPrompt().isBlank()) {
+            return attractions;
+        }
+
+        int totalDays = (int) ChronoUnit.DAYS.between(
+                trip.getStartDate(),
+                trip.getEndDate()
+        ) + 1;
+
+        List<TouristAttractionData> recommendable =
+                touristAttractionRepository.findAllRecommendable();
+
+        List<TripPromptDayConstraintParser.NamedAttraction> names =
+                recommendable.stream()
+                        .map(item -> new TripPromptDayConstraintParser.NamedAttraction(
+                                item.id(),
+                                item.name()
+                        ))
+                        .toList();
+
+        List<TripPromptDayConstraintParser.DayConstraint> constraints =
+                TripPromptDayConstraintParser.parse(
+                        trip.getPrompt(),
+                        totalDays,
+                        names
+                );
+
+        if (constraints.isEmpty()) {
+            return attractions;
+        }
+
+        Set<Long> existingIds = new HashSet<>();
+        attractions.forEach(item -> existingIds.add(item.id()));
+
+        Map<Long, TouristAttractionData> sourceById = new HashMap<>();
+        recommendable.forEach(item -> sourceById.put(item.id(), item));
+
+        ArrayList<TripPlanCandidatePool.AttractionCandidate> result =
+                new ArrayList<>(attractions);
+
+        for (TripPromptDayConstraintParser.DayConstraint constraint : constraints) {
+            if (existingIds.contains(constraint.attractionId())) {
+                continue;
+            }
+
+            TouristAttractionData source = sourceById.get(constraint.attractionId());
+            if (source == null
+                    || source.latitude() == null
+                    || source.longitude() == null) {
+                continue;
+            }
+
+            result.add(0, new TripPlanCandidatePool.AttractionCandidate(
+                    source.id(),
+                    source.name(),
+                    source.categoryName(),
+                    source.latitude(),
+                    source.longitude(),
+                    null,
+                    null,
+                    1.0,
+                    source.allTags() == null ? source.tags() : source.allTags(),
+                    "사용자가 프롬프트에서 방문 일차를 지정한 관광지",
+                    false,
+                    null,
+                    null,
+                    null,
+                    null
+            ));
+            existingIds.add(source.id());
+        }
+
+        return result;
     }
 
     private TripPlanCandidatePool.MandatoryDestination buildMandatoryDestination(

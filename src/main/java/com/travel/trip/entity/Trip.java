@@ -132,6 +132,9 @@ public class Trip {
     private Set<TripPreference> preferences =
             new HashSet<>();
 
+    @Column(length = 1000)
+    private String prompt;
+
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(
             name = "trip_food_preferences",
@@ -214,7 +217,8 @@ public class Trip {
             Long mealBudgetPerPersonPerDay,
             TripPace pace,
             Set<TripPreference> preferences,
-            Set<FoodPreference> foodPreferences
+            Set<FoodPreference> foodPreferences,
+            String prompt
     ) {
         this.user = user;
 
@@ -256,6 +260,11 @@ public class Trip {
                 foodPreferences == null
                         ? new HashSet<>()
                         : new HashSet<>(foodPreferences);
+
+        this.prompt =
+                prompt == null || prompt.isBlank()
+                        ? null
+                        : prompt.trim();
     }
 
     public void selectAccommodation(
