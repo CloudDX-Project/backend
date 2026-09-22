@@ -40,6 +40,7 @@ public class RedisConfig {
                 "weatherMid", types.constructMapType(HashMap.class, LocalDate.class, WeatherCondition.class),
                 "flightSchedule", types.constructCollectionType(ArrayList.class, FlightCandidate.class),
                 "kakaoDrivingRoute", types.constructType(DrivingRouteResult.class),
+                "opinetFuelPrice", types.constructType(Double.class),
                 "cafeCandidates", types.constructType(CafeCandidateService.CafeCandidatePool.class),
                 "tripPlanAttractionCandidates", types.constructCollectionType(ArrayList.class, TripPlanCandidatePool.AttractionCandidate.class),
                 "tripPlanRestaurantCandidates", types.constructCollectionType(ArrayList.class, TripPlanCandidatePool.RestaurantCandidate.class),
@@ -47,6 +48,7 @@ public class RedisConfig {
         Map<String, Duration> defaults = Map.of(
                 "weatherShort", Duration.ofHours(2), "weatherMid", Duration.ofHours(6),
                 "flightSchedule", Duration.ofHours(12), "kakaoDrivingRoute", Duration.ofMinutes(15),
+                "opinetFuelPrice", Duration.ofHours(1),
                 "cafeCandidates", Duration.ofMinutes(30), "tripPlanAttractionCandidates", Duration.ofMinutes(30),
                 "tripPlanRestaurantCandidates", Duration.ofMinutes(30), "tripPlanCafeCandidates", Duration.ofMinutes(30));
         Map<String, Duration> ttls = new HashMap<>();

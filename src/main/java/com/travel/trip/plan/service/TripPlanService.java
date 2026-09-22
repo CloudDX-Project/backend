@@ -27,6 +27,7 @@ import com.travel.trip.plan.repository.TripPlanItemRepository;
 import com.travel.trip.plan.type.TripPlanItemType;
 import com.travel.trip.repository.TransportSegmentRepository;
 import com.travel.trip.repository.TripRepository;
+import com.travel.trip.service.FuelCostService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,6 +57,7 @@ public class TripPlanService {
     private final TripPlanBedrockService bedrockService;
     private final TripPlanSchedulePostProcessor schedulePostProcessor;
     private final RoutingService routingService;
+    private final FuelCostService fuelCostService;
 
     public TripPlanService(
             TripRepository tripRepository,
@@ -64,7 +66,8 @@ public class TripPlanService {
             TripPlanCandidateService candidateService,
             TripPlanBedrockService bedrockService,
             TripPlanSchedulePostProcessor schedulePostProcessor,
-            RoutingService routingService
+            RoutingService routingService,
+            FuelCostService fuelCostService
     ) {
         this.tripRepository =
                 tripRepository;
@@ -79,6 +82,8 @@ public class TripPlanService {
         this.schedulePostProcessor = schedulePostProcessor;
         this.routingService =
                 routingService;
+        this.fuelCostService =
+                fuelCostService;
     }
 
     @Transactional
@@ -1170,7 +1175,8 @@ public class TripPlanService {
                         calculateActualRouteCost(
                                 mode,
                                 distanceKm,
-                                route
+                                route,
+                                tripDay == null ? null : tripDay.getTrip()
                         );
 
                 LocalDateTime arrivalAt =
@@ -1241,11 +1247,20 @@ public class TripPlanService {
                         )
                 );
 
-        long cost =
-                mockTransportCost(
-                        mode,
-                        distanceKm
-                );
+        long cost = 0L;
+
+        if (
+                tripDay != null
+                        && (mode == SegmentTransportMode.RENTAL_CAR
+                        || mode == SegmentTransportMode.OWN_CAR)
+        ) {
+            Trip trip = tripDay.getTrip();
+            cost = fuelCostService.calculateFuelCost(
+                    trip == null ? null : trip.getFuelType(),
+                    trip == null ? null : trip.getVehicleEfficiencyKmpl(),
+                    distanceKm
+            );
+        }
 
         LocalDateTime arrivalAt =
                 departureAt == null
@@ -1375,7 +1390,8 @@ public class TripPlanService {
     private long calculateActualRouteCost(
             SegmentTransportMode mode,
             double distanceKm,
-            DrivingRouteResult route
+            DrivingRouteResult route,
+            Trip trip
     ) {
         if (mode == SegmentTransportMode.TAXI) {
             return route.taxiFare();
@@ -1385,10 +1401,21 @@ public class TripPlanService {
                 mode == SegmentTransportMode.RENTAL_CAR
                         || mode == SegmentTransportMode.OWN_CAR
         ) {
-            return mockTransportCost(
-                    mode,
+            /*
+             * 시간표 계산용 임시 segment(trip == null)는 비용이 필요 없다.
+             * 실제 저장 segment에서만 오피넷 유가를 반영한다.
+             */
+            if (trip == null) {
+                return 0L;
+            }
+
+            long fuelCost = fuelCostService.calculateFuelCost(
+                    trip.getFuelType(),
+                    trip.getVehicleEfficiencyKmpl(),
                     distanceKm
-            ) + route.tollFare();
+            );
+
+            return fuelCost + route.tollFare();
         }
 
         return 0L;
@@ -1502,31 +1529,6 @@ public class TripPlanService {
             case EXPRESS_BUS -> 70.0;
             case AIR -> 500.0;
         };
-    }
-
-    private long mockTransportCost(
-            SegmentTransportMode mode,
-            double distanceKm
-    ) {
-        if (
-                mode != SegmentTransportMode.RENTAL_CAR
-                        && mode != SegmentTransportMode.OWN_CAR
-        ) {
-            return 0L;
-        }
-
-        /*
-         * MVP 목업 유류비
-         * - 평균 연비: 10 km/L
-         * - 유가: 1,700원/L
-         * 실제 렌터카/유가 API 연동 시 교체한다.
-         */
-        double liters =
-                distanceKm / 10.0;
-
-        return Math.round(
-                liters * 1_700.0
-        );
     }
 
     private double haversineKm(

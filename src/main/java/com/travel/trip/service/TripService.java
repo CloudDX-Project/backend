@@ -528,6 +528,14 @@ public class TripService {
                                 request.localTransportMode()
                         )
 
+                        .fuelType(
+                                request.fuelType()
+                        )
+
+                        .vehicleEfficiencyKmpl(
+                                request.vehicleEfficiencyKmpl()
+                        )
+
                         .budget(
                                 request.budget()
                         )

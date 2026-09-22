@@ -6,6 +6,7 @@ import com.travel.trip.entity.LocalTransportMode;
 import com.travel.trip.entity.MainTransportMode;
 import com.travel.trip.entity.TripPace;
 import com.travel.trip.entity.TripPreference;
+import com.travel.trip.entity.VehicleFuelType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -106,6 +107,22 @@ public record TripCreateRequest(
                 message = "현지 교통수단은 필수입니다."
         )
         LocalTransportMode localTransportMode,
+
+        /*
+         * 차량 이동 유류비 계산용.
+         * 자동차/렌터카가 아니면 null이어도 된다.
+         */
+        VehicleFuelType fuelType,
+
+        @DecimalMin(
+                value = "1.0",
+                message = "차량 연비는 1km/L 이상이어야 합니다."
+        )
+        @DecimalMax(
+                value = "50.0",
+                message = "차량 연비는 50km/L 이하여야 합니다."
+        )
+        Double vehicleEfficiencyKmpl,
 
         @NotNull(message = "예산은 필수입니다.")
         @PositiveOrZero(

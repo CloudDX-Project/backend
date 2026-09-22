@@ -22,3 +22,7 @@ external:
   kakao-mobility:
     base-url: https://apis-navi.kakaomobility.com
     rest-api-key: ${KAKAO_REST_API_KEY:}
+
+  opinet:
+    base-url: https://www.opinet.co.kr
+    api-key: ${OPINET_API_KEY:}

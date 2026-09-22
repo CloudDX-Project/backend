@@ -12,6 +12,7 @@ import com.travel.trip.plan.dto.*;
 import com.travel.trip.plan.type.TripPlanItemType;
 import com.travel.trip.repository.TransportSegmentRepository;
 import com.travel.trip.repository.TripRepository;
+import com.travel.trip.service.FuelCostService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -35,7 +36,7 @@ class TripPlanFlightTimingTest {
                         List.of(new RoutePoint(33.5, 126.5), new RoutePoint(33.51, 126.51))));
         service = new TripPlanService(mock(TripRepository.class), null,
                 mock(TransportSegmentRepository.class), null, null,
-                new TripPlanSchedulePostProcessor(routing), routing);
+                new TripPlanSchedulePostProcessor(routing), routing, mock(FuelCostService.class));
         trip = mock(Trip.class);
         when(trip.getLocalTransportMode()).thenReturn(LocalTransportMode.RENTAL_CAR);
         TripRentalSelection rental = mock(TripRentalSelection.class);

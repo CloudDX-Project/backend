@@ -105,6 +105,16 @@ public class Trip {
     )
     private LocalTransportMode localTransportMode;
 
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "fuel_type",
+            length = 20
+    )
+    private VehicleFuelType fuelType;
+
+    @Column(name = "vehicle_efficiency_kmpl")
+    private Double vehicleEfficiencyKmpl;
+
     @Column(nullable = false)
     private Long budget;
 
@@ -213,6 +223,8 @@ public class Trip {
             int peopleCount,
             MainTransportMode mainTransportMode,
             LocalTransportMode localTransportMode,
+            VehicleFuelType fuelType,
+            Double vehicleEfficiencyKmpl,
             Long budget,
             Long mealBudgetPerPersonPerDay,
             TripPace pace,
@@ -243,6 +255,9 @@ public class Trip {
 
         this.localTransportMode =
                 localTransportMode;
+
+        this.fuelType = fuelType;
+        this.vehicleEfficiencyKmpl = vehicleEfficiencyKmpl;
 
         this.budget = budget;
 
