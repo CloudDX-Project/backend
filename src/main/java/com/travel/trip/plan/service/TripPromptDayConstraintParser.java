@@ -24,9 +24,9 @@ public final class TripPromptDayConstraintParser {
             Pattern.compile("([1-9]\\d*)일차");
 
     /**
-     * 쉼표/마침표/개행/"그리고" 단위로 먼저 분리한다.
-     * "새별오름 2일차, 한담해안산책로 3일차"처럼 여러 요청이 있을 때
-     * 앞 관광지의 일차가 뒤 관광지에 잘못 붙는 것을 방지한다.
+     * 강한 구두점/개행/"그리고" 단위로 먼저 분리한다.
+     * 단, "한담해안산책로!! 3일차"처럼 구두점 때문에 관광지와 일차가
+     * 서로 다른 조각으로 갈라진 경우에는 아래 splitClauses(...)에서 다시 합친다.
      */
     private static final Pattern CLAUSE_SEPARATOR =
             Pattern.compile("[,，;.!?\\n\\r]+|\\s*그리고\\s*");
@@ -72,11 +72,7 @@ public final class TripPromptDayConstraintParser {
 
         Map<Long, DayConstraint> selectedByAttractionId = new LinkedHashMap<>();
 
-        for (String clause : CLAUSE_SEPARATOR.split(prompt)) {
-            if (clause == null || clause.isBlank()) {
-                continue;
-            }
-
+        for (String clause : splitClauses(prompt, totalDays, attractions)) {
             for (DayConstraint constraint : parseClause(clause, totalDays, attractions)) {
                 selectedByAttractionId.putIfAbsent(
                         constraint.attractionId(),
@@ -91,6 +87,104 @@ public final class TripPromptDayConstraintParser {
                 .thenComparing(DayConstraint::attractionName));
 
         return List.copyOf(result);
+    }
+
+    /**
+     * 일반 문장 경계는 유지하되, 관광지명과 일차만 따로 떨어진 인접 조각은
+     * 하나의 요청으로 다시 합친다.
+     *
+     * 예)
+     * - "한담해안산책로!! 3일차" -> "한담해안산책로 3일차"
+     * - "3일차. 한담해안산책로" -> "3일차 한담해안산책로"
+     * - "새별오름 2일차. 한담해안산책로 3일차" -> 두 요청 그대로 유지
+     */
+    private static List<String> splitClauses(
+            String prompt,
+            int totalDays,
+            List<NamedAttraction> attractions
+    ) {
+        List<String> rawParts = new ArrayList<>();
+        for (String part : CLAUSE_SEPARATOR.split(prompt)) {
+            if (part != null && !part.isBlank()) {
+                rawParts.add(part.trim());
+            }
+        }
+
+        if (rawParts.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> result = new ArrayList<>();
+        int index = 0;
+
+        while (index < rawParts.size()) {
+            String current = rawParts.get(index);
+            boolean currentHasDay = containsValidDay(current, totalDays);
+            boolean currentHasAttraction = containsKnownAttraction(current, attractions);
+
+            if (index + 1 < rawParts.size()) {
+                String next = rawParts.get(index + 1);
+                boolean nextHasDay = containsValidDay(next, totalDays);
+                boolean nextHasAttraction = containsKnownAttraction(next, attractions);
+
+                boolean placeThenDay =
+                        currentHasAttraction && !currentHasDay
+                                && !nextHasAttraction && nextHasDay;
+
+                boolean dayThenPlace =
+                        currentHasDay && !currentHasAttraction
+                                && nextHasAttraction && !nextHasDay;
+
+                if (placeThenDay || dayThenPlace) {
+                    result.add(current + " " + next);
+                    index += 2;
+                    continue;
+                }
+            }
+
+            result.add(current);
+            index++;
+        }
+
+        return result;
+    }
+
+    private static boolean containsValidDay(
+            String value,
+            int totalDays
+    ) {
+        Matcher matcher = DAY_PATTERN.matcher(normalize(value));
+        while (matcher.find()) {
+            try {
+                int day = Integer.parseInt(matcher.group(1));
+                if (day >= 1 && day <= totalDays) {
+                    return true;
+                }
+            } catch (NumberFormatException ignored) {
+                // 다음 일차 표현을 계속 확인한다.
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsKnownAttraction(
+            String value,
+            List<NamedAttraction> attractions
+    ) {
+        if (attractions == null || attractions.isEmpty()) {
+            return false;
+        }
+
+        String normalizedValue = normalize(value);
+        if (normalizedValue.isBlank()) {
+            return false;
+        }
+
+        return attractions.stream()
+                .filter(item -> item != null && item.name() != null)
+                .map(item -> normalize(item.name()))
+                .filter(name -> name.length() >= 3)
+                .anyMatch(normalizedValue::contains);
     }
 
     private static List<DayConstraint> parseClause(

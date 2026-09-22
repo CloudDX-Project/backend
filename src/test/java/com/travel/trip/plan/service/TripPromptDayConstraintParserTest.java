@@ -87,6 +87,45 @@ class TripPromptDayConstraintParserTest {
     }
 
     @Test
+    void mergesDayThenPlaceAcrossPunctuation() {
+        List<TripPromptDayConstraintParser.DayConstraint> result =
+                TripPromptDayConstraintParser.parse(
+                        "3일차!! 한담해안산책로",
+                        3,
+                        List.of(new TripPromptDayConstraintParser.NamedAttraction(20L, "한담해안산책로"))
+                );
+
+        assertThat(result).singleElement()
+                .satisfies(item -> {
+                    assertThat(item.attractionId()).isEqualTo(20L);
+                    assertThat(item.dayNumber()).isEqualTo(3);
+                });
+    }
+
+    @Test
+    void keepsSeparateSentenceConstraintsSeparate() {
+        List<TripPromptDayConstraintParser.DayConstraint> result =
+                TripPromptDayConstraintParser.parse(
+                        "새별오름은 2일차. 한담해안산책로는 3일차.",
+                        3,
+                        List.of(
+                                new TripPromptDayConstraintParser.NamedAttraction(10L, "새별오름"),
+                                new TripPromptDayConstraintParser.NamedAttraction(20L, "한담해안산책로")
+                        )
+                );
+
+        assertThat(result)
+                .extracting(
+                        TripPromptDayConstraintParser.DayConstraint::attractionId,
+                        TripPromptDayConstraintParser.DayConstraint::dayNumber
+                )
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(10L, 2),
+                        org.assertj.core.groups.Tuple.tuple(20L, 3)
+                );
+    }
+
+    @Test
     void ignoresBlankPlaceNameAndShortCandidateName() {
         assertThat(TripPromptDayConstraintParser.requestedDayFor("한담 2일차", " ", 3)).isNull();
 

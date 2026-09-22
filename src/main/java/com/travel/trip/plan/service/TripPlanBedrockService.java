@@ -1011,6 +1011,15 @@ public class TripPlanBedrockService {
                         candidatePool
                 );
 
+        // 프롬프트로 특정 일차가 지정된 관광지는 해당 일차가 오기 전
+        // 일반 fallback 관광지 선택에서 소비되면 안 된다.
+        // 예: "한담해안산책로 3일차"인데 ACTIVE 일정의 1일차 generic pick이
+        // 먼저 한담해안산책로를 선택하면 3일차 제약이 사라지는 문제가 생긴다.
+        Set<Long> promptReservedAttractionIds =
+                promptDayConstraints.stream()
+                        .map(TripPromptDayConstraintParser.DayConstraint::attractionId)
+                        .collect(java.util.stream.Collectors.toSet());
+
         TripPlanCandidatePool.AttractionCandidate mandatory =
                 candidatePool.attractions()
                         .stream()
@@ -1169,7 +1178,11 @@ public class TripPlanBedrockService {
 
             for (int i = 0; i < genericAttractionTarget; i++) {
                 TripPlanCandidatePool.AttractionCandidate attraction =
-                        pickAttraction(candidatePool.attractions(), usedAttractions);
+                        pickAttraction(
+                                candidatePool.attractions(),
+                                usedAttractions,
+                                promptReservedAttractionIds
+                        );
                 if (attraction == null || cursor.isAfter(LocalTime.of(17, 0))) {
                     break;
                 }
@@ -1293,11 +1306,13 @@ public class TripPlanBedrockService {
 
     private TripPlanCandidatePool.AttractionCandidate pickAttraction(
             List<TripPlanCandidatePool.AttractionCandidate> candidates,
-            Set<Long> usedIds
+            Set<Long> usedIds,
+            Set<Long> reservedPromptIds
     ) {
         return candidates.stream()
                 .filter(item -> !item.mandatory())
                 .filter(item -> !usedIds.contains(item.id()))
+                .filter(item -> reservedPromptIds == null || !reservedPromptIds.contains(item.id()))
                 .max(Comparator.comparingDouble(item ->
                         safe(item.recommendationScore()) * 0.85
                                 + routeConvenience(item.actualDriveMinutesFromAccommodation()) * 0.15
